@@ -48,7 +48,11 @@ export default async function AppointmentsPage() {
                     </span>
                   </td>
                   <td className="px-1 py-[12px] text-right">
-                    {completableStatuses.includes(a.status) && <CompleteButton appointmentId={a.id} />}
+                    <CompleteButton
+                      appointmentId={a.id}
+                      invoiceId={a.invoice_id}
+                      canComplete={completableStatuses.includes(a.status)}
+                    />
                   </td>
                 </tr>
               );

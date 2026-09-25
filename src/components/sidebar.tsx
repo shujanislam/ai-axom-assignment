@@ -9,6 +9,7 @@ import {
   ChatIcon,
   HomeIcon,
   ListIcon,
+  ReceiptIcon,
   SparkIcon,
 } from "./icons";
 import { logout } from "@/app/(auth)/login/actions";
@@ -27,6 +28,7 @@ const nav: NavItem[] = [
   { href: "/messages", label: "Messages", icon: ChatIcon, match: (p) => p.startsWith("/messages") },
   { href: "/appointments", label: "Appointments", icon: CalendarIcon, match: (p) => p.startsWith("/appointments") },
   { href: "/job-cards", label: "Job cards", icon: CardIcon, match: (p) => p.startsWith("/job-cards") },
+  { href: "/invoices", label: "Invoices", icon: ReceiptIcon, match: (p) => p.startsWith("/invoices") },
 ];
 
 export function Sidebar({ advisor }: { advisor: { name: string; role: string } }) {

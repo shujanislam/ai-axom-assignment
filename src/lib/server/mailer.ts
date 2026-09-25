@@ -92,7 +92,7 @@ export async function sendInvoiceEmail(mail: InvoiceEmail) {
   const { invoice } = mail;
   const vehicle = mail.vehicleType ? `${mail.vehicleType} ${mail.plate}` : mail.plate;
   const date = invoice.date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  const gstLabel = `GST (${Math.round(invoice.gstRate * 100)}%)`;
+  const gstLabel = `GST (${Math.round(invoice.gst_rate * 100)}%)`;
 
   const text = [
     `Hi ${mail.name},`,

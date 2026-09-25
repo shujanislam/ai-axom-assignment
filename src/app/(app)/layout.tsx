@@ -6,7 +6,8 @@ import { getCurrentAdvisor } from "@/lib/server/auth";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const advisor = await getCurrentAdvisor();
-  if (!advisor) redirect("/login");
+  // A signed cookie for an advisor who no longer exists: clear it, or /login bounces straight back here.
+  if (!advisor) redirect("/session-expired");
 
   return (
     <div className="flex min-h-screen flex-col lg:flex-row">

@@ -1,24 +1,45 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { CheckIcon } from "@/components/icons";
 import { Button } from "@/components/ui";
 import { completeAppointment, type CompleteResult } from "./actions";
 
-export function CompleteButton({ appointmentId }: { appointmentId: string }) {
+/** Stays mounted when the row flips to COMPLETED, so the email outcome survives the page refresh. */
+export function CompleteButton({
+  appointmentId,
+  invoiceId,
+  canComplete,
+}: {
+  appointmentId: string;
+  invoiceId: string | null;
+  canComplete: boolean;
+}) {
   const [confirming, setConfirming] = useState(false);
   const [completing, startTransition] = useTransition();
   const [result, setResult] = useState<CompleteResult | { error: string } | null>(null);
 
   if (result && "emailed" in result) {
-    return result.emailed ? (
-      <span className="text-[13px] text-muted">Invoice emailed</span>
-    ) : (
-      <span className="text-[13px] text-amber" title={result.reason}>
-        Completed, invoice not sent
-      </span>
+    return (
+      <Link
+        href={`/invoices/${result.invoiceId}`}
+        className={`text-[13px] hover:underline ${result.emailed ? "text-muted" : "text-amber"}`}
+        title={result.emailed ? undefined : result.reason}
+      >
+        {result.emailed ? "Invoice emailed" : "Invoice saved, email not sent"}
+      </Link>
     );
   }
+
+  if (invoiceId) {
+    return (
+      <Link href={`/invoices/${invoiceId}`} className="text-[13px] text-muted hover:underline">
+        View invoice
+      </Link>
+    );
+  }
+  if (!canComplete) return null;
 
   return (
     <span className="flex items-center justify-end gap-2">

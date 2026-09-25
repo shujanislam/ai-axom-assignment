@@ -3,15 +3,17 @@
 
 export type InvoiceLine = { description: string; qty: number; unitPrice: number };
 
-export type Invoice = {
-  number: string;
-  date: Date;
+/** Stored as invoices.cost (JSONB). */
+export type InvoiceCost = {
+  currency: "INR";
   lines: (InvoiceLine & { amount: number })[];
   subtotal: number;
-  gstRate: number;
+  gst_rate: number;
   gst: number;
   total: number;
 };
+
+export type Invoice = InvoiceCost & { number: string; date: Date };
 
 const GST_RATE = 0.18;
 
@@ -48,22 +50,19 @@ const PRICE_LIST: { match: RegExp; lines: InvoiceLine[] }[] = [
 
 const FALLBACK: InvoiceLine[] = [{ description: "Service charge", qty: 1, unitPrice: 1000 }];
 
-export function buildInvoice(appointmentId: string, appointmentType: string, date: Date): Invoice {
+export function buildInvoiceCost(appointmentType: string): InvoiceCost {
   const items = PRICE_LIST.find((p) => p.match.test(appointmentType))?.lines ?? [
     { ...FALLBACK[0], description: `${appointmentType} (service charge)` },
   ];
   const lines = items.map((l) => ({ ...l, amount: l.qty * l.unitPrice }));
   const subtotal = lines.reduce((n, l) => n + l.amount, 0);
   const gst = Math.round(subtotal * GST_RATE);
-  return {
-    number: `INV-${appointmentId.slice(0, 8).toUpperCase()}`,
-    date,
-    lines,
-    subtotal,
-    gstRate: GST_RATE,
-    gst,
-    total: subtotal + gst,
-  };
+  return { currency: "INR", lines, subtotal, gst_rate: GST_RATE, gst, total: subtotal + gst };
+}
+
+/** Human-facing invoice number, derived from the invoice row's id. */
+export function invoiceNumber(invoiceId: string) {
+  return `INV-${invoiceId.slice(0, 8).toUpperCase()}`;
 }
 
 export function formatRupees(amount: number) {

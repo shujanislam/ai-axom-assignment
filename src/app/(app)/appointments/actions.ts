@@ -2,19 +2,21 @@
 
 import { refresh } from "next/cache";
 import { completableStatuses } from "@/lib/format";
-import { buildInvoice } from "@/lib/invoice";
+import { buildInvoiceCost, invoiceNumber } from "@/lib/invoice";
 import { getCurrentAdvisor } from "@/lib/server/auth";
 import { sql } from "@/lib/server/db";
 import { sendInvoiceEmail } from "@/lib/server/mailer";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type CompleteResult = { emailed: true } | { emailed: false; reason: string };
+export type CompleteResult =
+  { invoiceId: string; emailed: true } | { invoiceId: string; emailed: false; reason: string };
 
 type Completed = {
   id: string;
   appointment_type: string;
-  completed_at: Date;
+  invoice_id: string;
+  invoiced_at: Date;
   customer_name: string;
   email: string | null;
   vehicle_number: string;
@@ -22,12 +24,19 @@ type Completed = {
 };
 
 /**
- * Marks the appointment COMPLETED and records the visit in the service history, in one
- * statement, then emails the invoice. A failed email does not undo the completion.
+ * Marks the appointment COMPLETED, records the visit in the service history and saves its
+ * invoice, all in one statement, then emails the invoice. A failed email undoes nothing.
  */
 export async function completeAppointment(id: string): Promise<CompleteResult> {
   if (!(await getCurrentAdvisor())) throw new Error("Not signed in");
   if (!UUID.test(id)) throw new Error("Invalid request");
+
+  const [appointment] = (await sql`
+    SELECT appointment_type FROM appointments WHERE id = ${id} AND status = ANY(${completableStatuses})`) as {
+    appointment_type: string;
+  }[];
+  if (!appointment) throw new Error("This appointment can't be completed from its current status.");
+  const cost = buildInvoiceCost(appointment.appointment_type);
 
   const [done] = (await sql`
     WITH done AS (
@@ -37,17 +46,22 @@ export async function completeAppointment(id: string): Promise<CompleteResult> {
     ), visit AS (
       INSERT INTO services (customer_id, vehicle_id, service_type, appointment_id)
       SELECT customer_id, vehicle_id, appointment_type || ' · completed', id FROM done
-      RETURNING created_at
+    ), invoice AS (
+      INSERT INTO invoices (appointment_id, cost)
+      SELECT id, ${JSON.stringify(cost)}::jsonb FROM done
+      RETURNING id, created_at
     )
-    SELECT d.id, d.appointment_type, (SELECT created_at FROM visit) AS completed_at,
+    SELECT d.id, d.appointment_type, i.id AS invoice_id, i.created_at AS invoiced_at,
       c.name AS customer_name, c.email, v.vehicle_number, v.vehicle_type
     FROM done d
+    CROSS JOIN invoice i
     JOIN customers c ON c.id = d.customer_id
     JOIN vehicles v ON v.id = d.vehicle_id`) as Completed[];
-  if (!done) throw new Error("This appointment can't be completed from its current status.");
+  if (!done) throw new Error("This appointment was completed a moment ago.");
   refresh();
 
-  if (!done.email) return { emailed: false, reason: "no email address on file" };
+  const invoiceId = done.invoice_id;
+  if (!done.email) return { invoiceId, emailed: false, reason: "no email address on file" };
   try {
     await sendInvoiceEmail({
       to: done.email,
@@ -55,11 +69,11 @@ export async function completeAppointment(id: string): Promise<CompleteResult> {
       plate: done.vehicle_number,
       vehicleType: done.vehicle_type,
       service: done.appointment_type,
-      invoice: buildInvoice(done.id, done.appointment_type, new Date(done.completed_at)),
+      invoice: { ...cost, number: invoiceNumber(invoiceId), date: new Date(done.invoiced_at) },
     });
-    return { emailed: true };
+    return { invoiceId, emailed: true };
   } catch (error) {
-    console.error(`[mail] invoice for appointment ${done.id} failed:`, error);
-    return { emailed: false, reason: error instanceof Error ? error.message : "sending failed" };
+    console.error(`[mail] invoice ${invoiceId} for appointment ${done.id} failed:`, error);
+    return { invoiceId, emailed: false, reason: error instanceof Error ? error.message : "sending failed" };
   }
 }
