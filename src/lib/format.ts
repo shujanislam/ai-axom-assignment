@@ -16,6 +16,9 @@ export const appointmentStatus: Record<string, { label: string; tone: Tone }> = 
   CANCELLED: { label: "Cancelled", tone: "idle" },
 };
 
+/** Appointments that can be marked done: the car is in, or booked to come in. */
+export const completableStatuses = ["CHECKED_IN", "SCHEDULED"];
+
 export function statusMeta(status: string) {
   return appointmentStatus[status] ?? { label: humanize(status), tone: "idle" as Tone };
 }
@@ -31,13 +34,7 @@ export const dueFilters = [
 // ---------------------------------------------------------- recommendations
 
 export type AdvisorAction =
-  | "PENDING"
-  | "CONTACT_CUSTOMER"
-  | "SCHEDULE_SERVICE"
-  | "APPROVED"
-  | "REJECTED"
-  | "COMPLETED"
-  | "NO_ACTION";
+  "PENDING" | "CONTACT_CUSTOMER" | "SCHEDULE_SERVICE" | "APPROVED" | "REJECTED" | "COMPLETED" | "NO_ACTION";
 
 export type Priority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 

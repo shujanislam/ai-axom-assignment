@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, Dot, PageHeader } from "@/components/ui";
-import { formatDateTime, statusMeta } from "@/lib/format";
+import { completableStatuses, formatDateTime, statusMeta } from "@/lib/format";
 import { getAppointments } from "@/lib/server/queries";
+import { CompleteButton } from "./complete-button";
 
 export const metadata: Metadata = { title: "Appointments · Servicedesk" };
 
@@ -23,6 +24,7 @@ export default async function AppointmentsPage() {
               <th className="px-1 py-4 font-normal">Assigned to</th>
               <th className="px-1 py-4 font-normal">Booked</th>
               <th className="px-1 py-4 font-normal">Status</th>
+              <th className="w-[190px] px-1 py-4" />
             </tr>
           </thead>
           <tbody>
@@ -45,12 +47,15 @@ export default async function AppointmentsPage() {
                       {status.label}
                     </span>
                   </td>
+                  <td className="px-1 py-[12px] text-right">
+                    {completableStatuses.includes(a.status) && <CompleteButton appointmentId={a.id} />}
+                  </td>
                 </tr>
               );
             })}
             {appointments.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-muted">
+                <td colSpan={7} className="py-12 text-center text-muted">
                   No appointments yet.
                 </td>
               </tr>
