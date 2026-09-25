@@ -15,16 +15,14 @@ export function ReevaluateButton() {
       ? "Re-evaluate"
       : !result.ok
         ? "Failed, retry"
-        : result.added === 0
-          ? "Nothing new"
-          : `${result.added} added`;
+        : `${result.added === 0 ? "Nothing new" : `${result.added} added`}${result.aiQueued ? " · AI checking notes" : ""}`;
 
   return (
     <Button
       variant="secondary"
       className="flex-row-reverse"
       disabled={running}
-      title="Check completed visits for owners who need another service. Takes about a minute."
+      title="Adds services due by interval right away; the AI then reviews visit notes in the background (reload to see its findings)."
       onClick={() =>
         startTransition(async () => {
           setResult(await reevaluateServiceDue().catch(() => ({ ok: false }) as const));

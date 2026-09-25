@@ -1,10 +1,14 @@
 import OpenAI from "openai";
-import { priorities, recommendationTypes, type Priority } from "../format";
+import { formatDate, priorities, recommendationTypes, type Priority } from "../format";
 import { sql } from "./db";
 
 // NVIDIA's API is OpenAI-compatible, so the openai client just points at it.
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+/** NVIDIA's free tier can stall for minutes; give up on a batch rather than hang. */
+const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 120_000);
+/** Vehicles per model call. Batches run in parallel, so smaller means faster. */
+const AI_BATCH_SIZE = 3;
 
 /** Titles become appointments.appointment_type on approval, which is VARCHAR(100). */
 const TITLE_MAX = 100;
@@ -20,12 +24,13 @@ type VehicleContext = {
   pending_follow_ups: string[];
 };
 
-type ModelRecommendation = {
-  vehicle_number: string;
+type Candidate = {
+  customer_id: string;
+  vehicle_id: string;
   recommendation_type: string;
   title: string;
-  description: string;
-  priority: string;
+  description: string | null;
+  priority: Priority;
 };
 
 export type NewFollowUp = {
@@ -62,105 +67,9 @@ async function getVehicleContext() {
   return rows as VehicleContext[];
 }
 
-const SYSTEM_PROMPT = `You are a service advisor assistant at a car workshop in India.
-For each vehicle you get its completed visits, any appointments that are still open, and
-follow-up recommendations already waiting for review. Decide which owners should be
-brought back for another service.
-
-Use typical Indian service intervals (periodic service roughly every 6-12 months, AC and
-brake checks around once a year, battery health for EVs and older vehicles), the time
-since each kind of visit, findings mentioned in past visits, and the fuel type.
-
-Rules:
-- Skip a vehicle if nothing is due.
-- Do not repeat a service that already has an open appointment or a pending follow-up.
-- At most 2 recommendations per vehicle.
-- "title" is the service to book, short enough to be an appointment type, e.g.
-  "Periodic service", "Brake inspection", "AC service" (max 60 characters).
-- "description" is one or two sentences for the advisor explaining why it is due.
-- "recommendation_type" is one of: ${recommendationTypes.join(", ")}.
-- "priority" is one of: ${priorities.join(", ")}.
-
-Reply with JSON only, no prose, in exactly this shape:
-{"recommendations":[{"vehicle_number":"...","recommendation_type":"SERVICE","title":"...",
-"description":"...","priority":"MEDIUM"}]}
-Return {"recommendations":[]} if no vehicle needs a follow-up.`;
-
-async function askModel(vehicles: VehicleContext[]): Promise<ModelRecommendation[]> {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) throw new Error("NVIDIA_API_KEY is not set. Add it to .env.local.");
-
-  // Only what the model needs to judge service intervals; no customer details leave the app.
-  const input = vehicles.map((v) => ({
-    vehicle_number: v.vehicle_number,
-    vehicle_type: v.vehicle_type,
-    fuel_type: v.fuel_type,
-    completed_visits: v.completed_visits,
-    open_appointments: v.open_appointments,
-    pending_follow_ups: v.pending_follow_ups,
-  }));
-
-  const client = new OpenAI({ apiKey, baseURL: NVIDIA_BASE_URL });
-  const completion = await client.chat.completions.create({
-    model: process.env.NVIDIA_MODEL ?? DEFAULT_MODEL,
-    temperature: 0.2,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: `Today is ${new Date().toISOString().slice(0, 10)}.\n\nVehicles:\n${JSON.stringify(input)}`,
-      },
-    ],
-  });
-
-  const content = completion.choices[0]?.message?.content ?? "";
-  // Some models wrap JSON in ```json fences or add text around it; take the outermost object.
-  const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
-  try {
-    return (JSON.parse(json) as { recommendations?: ModelRecommendation[] }).recommendations ?? [];
-  } catch {
-    throw new Error(`Model did not return valid JSON:\n${content}`);
-  }
-}
-
-/**
- * Asks the model which owners need another service and stores each suggestion as a
- * PENDING FOLLOW_UP recommendation. Returns the rows actually inserted.
- */
-export async function generateFollowUps(): Promise<NewFollowUp[]> {
-  const vehicles = await getVehicleContext();
-  if (vehicles.length === 0) return [];
-
-  const byPlate = new Map(vehicles.map((v) => [v.vehicle_number, v]));
-  const seen = new Set<string>();
-  const rows = (await askModel(vehicles)).flatMap((r) => {
-    const vehicle = byPlate.get(r.vehicle_number);
-    const title = String(r.title ?? "").trim().slice(0, TITLE_MAX);
-    const key = `${r.vehicle_number}|${title.toLowerCase()}`;
-    if (
-      !vehicle ||
-      !title ||
-      seen.has(key) ||
-      !(recommendationTypes as readonly string[]).includes(r.recommendation_type) ||
-      !(priorities as string[]).includes(r.priority)
-    ) {
-      return [];
-    }
-    seen.add(key);
-    return [
-      {
-        customer_id: vehicle.customer_id,
-        vehicle_id: vehicle.vehicle_id,
-        recommendation_type: r.recommendation_type,
-        title,
-        description: String(r.description ?? "").trim() || null,
-        priority: r.priority,
-      },
-    ];
-  });
+/** Stores candidates as PENDING follow-ups, skipping anything already waiting for review. */
+async function insertFollowUps(rows: Candidate[]) {
   if (rows.length === 0) return [];
-
-  // Skips anything already waiting for review, so repeated runs don't pile up duplicates.
   const inserted = await sql`
     INSERT INTO recommendations
       (customer_id, vehicle_id, recommendation_type, title, description, priority, source)
@@ -177,26 +86,244 @@ export async function generateFollowUps(): Promise<NewFollowUp[]> {
   return inserted as NewFollowUp[];
 }
 
-/**
- * Cron and Re-evaluate entry point. Logs what was added to the server console.
- * Returns the new recommendations, or null if the run failed.
- */
-export async function runFollowUpJob(): Promise<NewFollowUp[] | null> {
-  const started = Date.now();
-  console.log(`[follow-ups] run started ${new Date(started).toISOString()}`);
+// ------------------------------------------------------------------ rules
+
+/** Service intervals the workshop follows. A vehicle is only checked for a kind it has had before. */
+const SERVICE_RULES = [
+  { title: "Periodic service", type: "SERVICE", label: "periodic service", months: 12, match: /periodic/i },
+  { title: "AC service", type: "SERVICE", label: "AC service", months: 12, match: /\bac\b|air.?con/i },
+  { title: "Brake inspection", type: "INSPECTION", label: "brake service", months: 12, match: /brake/i },
+  { title: "Battery health check", type: "INSPECTION", label: "battery check", months: 12, match: /battery/i },
+] as const;
+
+type Rule = (typeof SERVICE_RULES)[number];
+
+/** Which rule a visit or appointment belongs to, judged by its service name (the part before "·"). */
+function ruleFor(text: string): Rule | undefined {
+  const name = text.split("·")[0];
+  return SERVICE_RULES.find((r) => r.match.test(name));
+}
+
+function todayInIndia() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
+}
+
+function monthsBetween(from: string, to: string) {
+  const [y1, m1, d1] = from.split("-").map(Number);
+  const [y2, m2, d2] = to.split("-").map(Number);
+  return (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0);
+}
+
+function overduePriority(monthsOver: number): Priority {
+  if (monthsOver < 0) return "LOW"; // due within the month
+  if (monthsOver < 3) return "MEDIUM";
+  if (monthsOver < 6) return "HIGH";
+  return "URGENT";
+}
+
+/** Services not yet booked or suggested for this vehicle, by rule title. */
+function alreadyPlanned(v: VehicleContext) {
+  return new Set(
+    [...v.open_appointments.map((a) => a.type), ...v.pending_follow_ups]
+      .map((t) => ruleFor(t)?.title ?? t)
+      .map((t) => t.toLowerCase()),
+  );
+}
+
+/** Interval-based follow-ups, worked out in code: instant and deterministic. */
+function evaluateRules(vehicles: VehicleContext[], today: string): Candidate[] {
+  return vehicles.flatMap((v) => {
+    const planned = alreadyPlanned(v);
+    return SERVICE_RULES.flatMap((rule) => {
+      const last = v.completed_visits.find((visit) => ruleFor(visit.service) === rule); // newest first
+      if (!last || planned.has(rule.title.toLowerCase())) return [];
+
+      const months = monthsBetween(last.date, today);
+      if (months < rule.months - 1) return [];
+
+      const when = `${months} months ago (${formatDate(last.date)})`;
+      return [
+        {
+          customer_id: v.customer_id,
+          vehicle_id: v.vehicle_id,
+          recommendation_type: rule.type,
+          title: rule.title,
+          description:
+            months >= rule.months
+              ? `Last ${rule.label} was ${when}; it is due every ${rule.months} months.`
+              : `Last ${rule.label} was ${when}; it falls due within the next month.`,
+          priority: overduePriority(months - rule.months),
+        },
+      ];
+    });
+  });
+}
+
+// --------------------------------------------------------------------- AI
+
+/** Visit notes that suggest a follow-up the intervals alone would miss. */
+const FINDING = /recheck|advis|declin|worn|nois|leak|review|slipp|left|within|soon/i;
+
+const SYSTEM_PROMPT = `You are a service advisor assistant at a car workshop in India.
+Regular service intervals are already handled. Your only job is to read the notes from past
+visits and spot follow-ups they call for: a part to recheck, a test that was advised, a repair
+the customer declined, wear that will need attention. Use the visit dates and today's date.
+
+Rules:
+- Skip anything listed in "already_planned".
+- Skip findings that were clearly resolved by a later visit.
+- At most 1 recommendation per vehicle, only when the note justifies it.
+- "title" is the service to book, max 60 characters, e.g. "Brake inspection", "CNG kit leak test".
+- "description" is one sentence for the advisor quoting the finding and its date.
+- "recommendation_type" is one of: ${recommendationTypes.join(", ")}.
+- "priority" is one of: ${priorities.join(", ")}.
+
+Reply with JSON only, no prose:
+{"recommendations":[{"vehicle_number":"...","recommendation_type":"INSPECTION","title":"...",
+"description":"...","priority":"MEDIUM"}]}
+Return {"recommendations":[]} if no note calls for a follow-up.`;
+
+type ModelRecommendation = {
+  vehicle_number: string;
+  recommendation_type: string;
+  title: string;
+  description: string;
+  priority: string;
+};
+
+async function askModel(client: OpenAI, input: object[], today: string): Promise<ModelRecommendation[]> {
+  const completion = await client.chat.completions.create({
+    model: process.env.NVIDIA_MODEL ?? DEFAULT_MODEL,
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: `Today is ${today}.\n\nVehicles:\n${JSON.stringify(input)}` },
+    ],
+  });
+
+  const content = completion.choices[0]?.message?.content ?? "";
+  // Some models wrap JSON in ```json fences or add text around it; take the outermost object.
+  const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
   try {
-    const created = await generateFollowUps();
-    if (created.length === 0) {
-      console.log("[follow-ups] no new follow-ups");
-    } else {
-      console.log(`[follow-ups] ${created.length} recommendation(s) added:`);
-      console.table(created);
-    }
+    return (JSON.parse(json) as { recommendations?: ModelRecommendation[] }).recommendations ?? [];
+  } catch {
+    throw new Error(`Model did not return valid JSON:\n${content}`);
+  }
+}
+
+function toCandidate(r: ModelRecommendation, byPlate: Map<string, VehicleContext>): Candidate | null {
+  const vehicle = byPlate.get(r.vehicle_number);
+  const title = String(r.title ?? "")
+    .trim()
+    .slice(0, TITLE_MAX);
+  if (
+    !vehicle ||
+    !title ||
+    !(recommendationTypes as readonly string[]).includes(r.recommendation_type) ||
+    !(priorities as string[]).includes(r.priority)
+  ) {
+    return null;
+  }
+  return {
+    customer_id: vehicle.customer_id,
+    vehicle_id: vehicle.vehicle_id,
+    recommendation_type: r.recommendation_type,
+    title,
+    description: String(r.description ?? "").trim() || null,
+    priority: r.priority as Priority,
+  };
+}
+
+/** Model review of visit notes, in small parallel batches. Skips vehicles with nothing noted. */
+async function evaluateNotes(vehicles: VehicleContext[], justAdded: Candidate[], today: string) {
+  const apiKey = process.env.NVIDIA_API_KEY;
+  if (!apiKey) {
+    console.warn("[follow-ups] NVIDIA_API_KEY is not set; skipping the AI review of visit notes");
+    return [];
+  }
+
+  const added = new Map<string, string[]>();
+  for (const c of justAdded) added.set(c.vehicle_id, [...(added.get(c.vehicle_id) ?? []), c.title]);
+
+  const input = vehicles
+    .filter((v) => v.completed_visits.some((visit) => FINDING.test(visit.service.split("·")[1] ?? "")))
+    .map((v) => ({
+      vehicle_number: v.vehicle_number,
+      vehicle_type: v.vehicle_type,
+      fuel_type: v.fuel_type,
+      visits: v.completed_visits,
+      already_planned: [
+        ...v.open_appointments.map((a) => a.type),
+        ...v.pending_follow_ups,
+        ...(added.get(v.vehicle_id) ?? []),
+      ],
+    }));
+  if (input.length === 0) return [];
+
+  const client = new OpenAI({ apiKey, baseURL: NVIDIA_BASE_URL, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
+  const batches = Array.from({ length: Math.ceil(input.length / AI_BATCH_SIZE) }, (_, i) =>
+    input.slice(i * AI_BATCH_SIZE, (i + 1) * AI_BATCH_SIZE),
+  );
+  const results = await Promise.allSettled(batches.map((batch) => askModel(client, batch, today)));
+
+  results.forEach((r, i) => {
+    if (r.status === "rejected") console.error(`[follow-ups] AI batch ${i + 1}/${batches.length} failed:`, r.reason);
+  });
+  if (results.every((r) => r.status === "rejected")) throw new Error("Every AI batch failed");
+
+  const byPlate = new Map(vehicles.map((v) => [v.vehicle_number, v]));
+  return results
+    .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
+    .flatMap((r) => toCandidate(r, byPlate) ?? []);
+}
+
+// ------------------------------------------------------------------ runs
+
+export type RulePass = { created: NewFollowUp[]; vehicles: VehicleContext[]; candidates: Candidate[] };
+
+/** Instant pass: interval rules only. Returns null if it failed. */
+export async function runRulePass(): Promise<RulePass | null> {
+  const started = Date.now();
+  try {
+    const vehicles = await getVehicleContext();
+    const candidates = evaluateRules(vehicles, todayInIndia());
+    const created = await insertFollowUps(candidates);
+    console.log(`[follow-ups] rules: ${created.length} added in ${Date.now() - started}ms`);
+    if (created.length) console.table(created);
+    return { created, vehicles, candidates };
+  } catch (error) {
+    console.error("[follow-ups] rule pass failed:", error);
+    return null;
+  }
+}
+
+// One AI review at a time, so repeated clicks don't pile up slow requests.
+const globalForAi = globalThis as unknown as { followUpAiRunning?: boolean };
+
+/** Slow pass: model review of visit notes. Returns what it added, or null if it failed or was skipped. */
+export async function runAiPass(rules: RulePass): Promise<NewFollowUp[] | null> {
+  if (globalForAi.followUpAiRunning) {
+    console.log("[follow-ups] AI review already running; skipped");
+    return null;
+  }
+  globalForAi.followUpAiRunning = true;
+  const started = Date.now();
+  try {
+    const candidates = await evaluateNotes(rules.vehicles, rules.candidates, todayInIndia());
+    const created = await insertFollowUps(candidates);
+    console.log(`[follow-ups] AI: ${created.length} added in ${Date.now() - started}ms`);
+    if (created.length) console.table(created);
     return created;
   } catch (error) {
-    console.error("[follow-ups] run failed:", error);
+    console.error(`[follow-ups] AI review failed after ${Date.now() - started}ms:`, error);
     return null;
   } finally {
-    console.log(`[follow-ups] run finished in ${Date.now() - started}ms`);
+    globalForAi.followUpAiRunning = false;
   }
+}
+
+/** Cron entry point: rules, then the AI review. */
+export async function runFollowUpJob() {
+  const rules = await runRulePass();
+  if (rules) await runAiPass(rules);
 }

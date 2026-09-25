@@ -4,7 +4,7 @@ import { Fragment, useState, useTransition } from "react";
 import { CheckIcon, SearchIcon } from "@/components/icons";
 import { Button, ButtonLink, Card, Dot, PageHeader, Row, type Tone } from "@/components/ui";
 import { dueFilters, humanize, priorityLevel, type Priority } from "@/lib/format";
-import { approveFollowUp } from "./actions";
+import { approveFollowUp, type ApproveResult } from "./actions";
 import { ReevaluateButton } from "./reevaluate-button";
 
 export type DueItem = {
@@ -33,6 +33,7 @@ export function ServiceDueView({ today, summary, items }: { today: string; summa
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ApproveResult | null>(null);
 
   const priorities = dueFilters.find((f) => f.key === filter)?.priorities;
   const q = query.trim().toLowerCase();
@@ -85,6 +86,15 @@ export function ServiceDueView({ today, summary, items }: { today: string; summa
           </Card>
         ))}
       </div>
+
+      {notice && (
+        <p role="status" className="mt-6 flex items-center gap-2.5 rounded-[14px] bg-white px-5 py-3.5 text-[13.5px]">
+          <Dot tone={notice.emailed ? "leaf" : "amber"} />
+          {notice.emailed
+            ? `Approved. ${notice.customer} has been emailed a link to pick a slot.`
+            : `Approved and saved as due, but no email was sent to ${notice.customer}: ${notice.reason}.`}
+        </p>
+      )}
 
       <div role="tablist" className="mt-6 flex gap-1 overflow-x-auto">
         {dueFilters.map((f) => (
@@ -141,7 +151,13 @@ export function ServiceDueView({ today, summary, items }: { today: string; summa
                   {open && (
                     <tr className="border-b border-line">
                       <td colSpan={6} className="px-1 pb-6 pt-4">
-                        <FollowUpDetail item={v} onDone={() => setOpenId(null)} />
+                        <FollowUpDetail
+                          item={v}
+                          onDone={(result) => {
+                            setOpenId(null);
+                            setNotice(result);
+                          }}
+                        />
                       </td>
                     </tr>
                   )}
@@ -162,7 +178,7 @@ export function ServiceDueView({ today, summary, items }: { today: string; summa
   );
 }
 
-function FollowUpDetail({ item, onDone }: { item: DueItem; onDone: () => void }) {
+function FollowUpDetail({ item, onDone }: { item: DueItem; onDone: (result: ApproveResult) => void }) {
   const [approving, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -200,8 +216,7 @@ function FollowUpDetail({ item, onDone }: { item: DueItem; onDone: () => void })
               startTransition(async () => {
                 setError(null);
                 try {
-                  await approveFollowUp(item.id);
-                  onDone();
+                  onDone(await approveFollowUp(item.id));
                 } catch {
                   setError("Could not approve. It may already be handled; reload to check.");
                 }

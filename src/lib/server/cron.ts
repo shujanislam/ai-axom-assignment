@@ -10,11 +10,6 @@ const globalForCron = globalThis as unknown as { followUpCronStarted?: boolean }
 export function scheduleFollowUpCron() {
   if (globalForCron.followUpCronStarted) return;
 
-  if (!process.env.NVIDIA_API_KEY) {
-    console.warn("[follow-ups] NVIDIA_API_KEY is not set; cron job not scheduled");
-    return;
-  }
-
   const schedule = process.env.SERVICE_CALL_CRON ?? DEFAULT_SCHEDULE;
   if (!cron.validate(schedule)) {
     console.error(`[follow-ups] invalid SERVICE_CALL_CRON "${schedule}"; cron job not scheduled`);
