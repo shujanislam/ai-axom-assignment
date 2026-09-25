@@ -21,11 +21,11 @@ export function statusMeta(status: string) {
 }
 
 export const dueFilters = [
-  { key: "all", label: "All", statuses: null },
-  { key: "overdue", label: "Overdue", statuses: ["OVERDUE"] },
-  { key: "no-reply", label: "No reply", statuses: ["NO_REPLY"] },
-  { key: "missed", label: "Missed", statuses: ["MISSED"] },
-  { key: "booked", label: "Booked", statuses: ["SCHEDULED", "CHECKED_IN"] },
+  { key: "all", label: "All", priorities: null },
+  { key: "urgent", label: "Urgent", priorities: ["URGENT"] },
+  { key: "high", label: "High", priorities: ["HIGH"] },
+  { key: "medium", label: "Medium", priorities: ["MEDIUM"] },
+  { key: "low", label: "Low", priorities: ["LOW"] },
 ] as const;
 
 // ---------------------------------------------------------- recommendations

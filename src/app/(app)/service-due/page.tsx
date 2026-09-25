@@ -1,39 +1,42 @@
 import type { Metadata } from "next";
-import { daysSince, formatDate, statusMeta } from "@/lib/format";
-import { getServiceDue } from "@/lib/server/queries";
+import { formatDate } from "@/lib/format";
+import { countApprovedFollowUps, getPendingFollowUps } from "@/lib/server/queries";
 import { ServiceDueView, type DueItem } from "./due-table";
 
 export const metadata: Metadata = { title: "Service due · Servicedesk" };
 
 export default async function ServiceDuePage() {
-  const rows = await getServiceDue();
+  const [rows, approved] = await Promise.all([getPendingFollowUps(), countApprovedFollowUps()]);
 
   const items: DueItem[] = rows.map((r) => ({
+    id: r.id,
     plate: r.vehicle_number,
     customer: r.customer_name,
+    phone: r.phone_number,
+    language: r.preferred_language,
     vehicleType: r.vehicle_type,
-    appointmentType: r.appointment_type,
+    type: r.recommendation_type,
+    title: r.title,
+    description: r.description,
+    priority: r.priority,
+    raised: formatDate(r.created_at),
     lastService: r.last_service_at ? formatDate(r.last_service_at) : null,
-    status: r.status,
-    ...statusMeta(r.status),
   }));
 
-  const count = (...statuses: string[]) => rows.filter((r) => statuses.includes(r.status)).length;
-  const overdue = rows.filter((r) => r.status === "OVERDUE");
-  const oldest = overdue.length ? Math.max(...overdue.map((r) => daysSince(r.created_at))) : 0;
-  const hereNow = count("CHECKED_IN");
+  const urgent = rows.filter((r) => r.priority === "URGENT" || r.priority === "HIGH").length;
+  const owners = new Set(rows.map((r) => r.customer_name)).size;
 
   const summary = [
-    { label: "Open", value: rows.length, unit: "vehicles", note: "Latest open appointment each" },
+    { label: "To review", value: rows.length, unit: "services", note: "Suggested from completed visits" },
     {
-      label: "Overdue",
-      value: overdue.length,
-      unit: "vehicles",
-      note: overdue.length ? `Oldest is ${oldest} days past` : "Nothing overdue",
-      flagged: overdue.length > 0,
+      label: "High priority",
+      value: urgent,
+      unit: "services",
+      note: urgent ? "Urgent or high, call first" : "Nothing pressing",
+      flagged: urgent > 0,
     },
-    { label: "Waiting on a reply", value: count("NO_REPLY"), unit: "customers", note: "Reminder sent, no answer yet" },
-    { label: "Booked", value: count("SCHEDULED", "CHECKED_IN"), unit: "vehicles", note: `${hereNow} here now` },
+    { label: "Owners", value: owners, unit: "customers", note: "To contact about a visit" },
+    { label: "Approved", value: approved, unit: "services", note: "Booked as due appointments" },
   ];
 
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long" });

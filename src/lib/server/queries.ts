@@ -5,30 +5,45 @@ import { sql } from "./db";
 
 // ------------------------------------------------------------- service due
 
-export type DueRow = {
-  appointment_id: string;
+export type FollowUpRow = {
+  id: string;
+  recommendation_type: string;
+  title: string;
+  description: string | null;
+  priority: Priority;
+  created_at: Date;
   vehicle_number: string;
   vehicle_type: string | null;
   customer_name: string;
-  appointment_type: string;
-  status: string;
-  created_at: Date;
+  phone_number: string;
+  preferred_language: string | null;
   last_service_at: Date | null;
 };
 
-/** Each vehicle's most recent appointment that is not completed or cancelled. */
-export async function getServiceDue() {
+/** Follow-up recommendations from the Re-evaluate job that are waiting for an advisor. */
+export async function getPendingFollowUps() {
   const rows = await sql`
-    SELECT DISTINCT ON (v.id)
-      a.id AS appointment_id, v.vehicle_number, v.vehicle_type, c.name AS customer_name,
-      a.appointment_type, a.status, a.created_at,
-      (SELECT max(s.created_at) FROM services s WHERE s.vehicle_id = v.id) AS last_service_at
-    FROM appointments a
-    JOIN vehicles v ON v.id = a.vehicle_id
-    JOIN customers c ON c.id = a.customer_id
-    WHERE a.status NOT IN ('COMPLETED', 'CANCELLED')
-    ORDER BY v.id, a.created_at DESC`;
-  return (rows as DueRow[]).sort((a, b) => +a.created_at - +b.created_at);
+    SELECT r.id, r.recommendation_type, r.title, r.description, r.priority, r.created_at,
+      v.vehicle_number, v.vehicle_type, c.name AS customer_name, c.phone_number, c.preferred_language,
+      GREATEST(
+        (SELECT max(s.created_at) FROM services s WHERE s.vehicle_id = v.id),
+        (SELECT max(a.created_at) FROM appointments a WHERE a.vehicle_id = v.id AND a.status = 'COMPLETED')
+      ) AS last_service_at
+    FROM recommendations r
+    JOIN vehicles v ON v.id = r.vehicle_id
+    JOIN customers c ON c.id = r.customer_id
+    WHERE r.source = 'FOLLOW_UP' AND r.advisor_action = 'PENDING'
+    ORDER BY
+      CASE r.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
+      r.created_at DESC`;
+  return rows as FollowUpRow[];
+}
+
+/** Follow-ups approved into DUE appointments. */
+export async function countApprovedFollowUps() {
+  const [row] = await sql`
+    SELECT count(*)::int AS n FROM recommendations WHERE source = 'FOLLOW_UP' AND advisor_action = 'APPROVED'`;
+  return (row as { n: number }).n;
 }
 
 // ------------------------------------------------------------------ today
@@ -49,7 +64,7 @@ export async function getArrivals() {
     SELECT v.vehicle_number, v.vehicle_type, v.fuel_type, c.name AS customer_name,
       a.appointment_type, a.created_at, adv.name AS advisor_name,
       (SELECT count(*)::int FROM recommendations r
-        WHERE r.vehicle_id = v.id AND r.advisor_action = 'PENDING') AS open_recommendations
+        WHERE r.vehicle_id = v.id AND r.source = 'WORKSHOP' AND r.advisor_action = 'PENDING') AS open_recommendations
     FROM appointments a
     JOIN vehicles v ON v.id = a.vehicle_id
     JOIN customers c ON c.id = a.customer_id
@@ -139,7 +154,7 @@ export async function getRecommendations(vehicleId: string) {
       adv.name AS advisor_name, r.created_at
     FROM recommendations r
     LEFT JOIN advisors adv ON adv.id = r.advisor_id
-    WHERE r.vehicle_id = ${vehicleId}
+    WHERE r.vehicle_id = ${vehicleId} AND r.source = 'WORKSHOP'
     ORDER BY
       CASE r.priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
       r.created_at`;
@@ -156,7 +171,7 @@ export async function getAcceptanceStats() {
       count(r.id) FILTER (WHERE r.advisor_action IN ('APPROVED', 'SCHEDULE_SERVICE', 'COMPLETED'))::int AS accepted,
       count(r.id) FILTER (WHERE r.advisor_action <> 'PENDING')::int AS reviewed
     FROM generate_series(current_date - 6, current_date, interval '1 day') d
-    LEFT JOIN recommendations r ON r.created_at::date = d::date
+    LEFT JOIN recommendations r ON r.created_at::date = d::date AND r.source = 'WORKSHOP'
     GROUP BY d ORDER BY d`;
   const days = rows as { day: Date; accepted: number; reviewed: number }[];
   const accepted = days.reduce((n, d) => n + d.accepted, 0);
@@ -184,6 +199,7 @@ export async function getJobCards() {
     FROM recommendations r
     JOIN vehicles v ON v.id = r.vehicle_id
     JOIN customers c ON c.id = r.customer_id
+    WHERE r.source = 'WORKSHOP'
     GROUP BY v.vehicle_number, v.vehicle_type, c.name
     ORDER BY max(r.created_at) DESC`;
   return rows as JobCardSummary[];

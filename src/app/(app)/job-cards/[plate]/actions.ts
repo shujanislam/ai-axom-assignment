@@ -25,6 +25,7 @@ export async function setRecommendationAction(plate: string, id: string, action:
     SET advisor_action = ${action}::advisor_action_type,
         advisor_id = ${action === "PENDING" ? null : advisor.id}
     WHERE id = ${id}
+      AND source = 'WORKSHOP'
       AND vehicle_id = (SELECT id FROM vehicles WHERE vehicle_number = ${plate})`;
   refresh();
 }
@@ -38,6 +39,7 @@ export async function updateWording(plate: string, id: string, title: string, de
     UPDATE recommendations
     SET title = ${cleanTitle}, description = ${description.trim() || null}
     WHERE id = ${id}
+      AND source = 'WORKSHOP'
       AND vehicle_id = (SELECT id FROM vehicles WHERE vehicle_number = ${plate})`;
   refresh();
 }
@@ -48,6 +50,7 @@ export async function skipAllPending(plate: string) {
     UPDATE recommendations
     SET advisor_action = 'REJECTED', advisor_id = ${advisor.id}
     WHERE advisor_action = 'PENDING'
+      AND source = 'WORKSHOP'
       AND vehicle_id = (SELECT id FROM vehicles WHERE vehicle_number = ${plate})`;
   refresh();
 }
@@ -58,6 +61,7 @@ export async function sendToWorkshop(plate: string) {
     UPDATE recommendations
     SET advisor_action = 'SCHEDULE_SERVICE', advisor_id = ${advisor.id}
     WHERE advisor_action = 'APPROVED'
+      AND source = 'WORKSHOP'
       AND vehicle_id = (SELECT id FROM vehicles WHERE vehicle_number = ${plate})`;
   refresh();
 }
