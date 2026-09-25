@@ -2,21 +2,12 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import { ArrowRightIcon } from "@/components/icons";
+import type { SessionKind } from "@/lib/session";
 import { login, type LoginState } from "./actions";
 
 const initialState: LoginState = {};
 
-function Field({
-  id,
-  label,
-  error,
-  children,
-}: {
-  id: string;
-  label: string;
-  error?: string;
-  children: ReactNode;
-}) {
+function Field({ id, label, error, children }: { id: string; label: string; error?: string; children: ReactNode }) {
   return (
     <div>
       <label htmlFor={id} className="block text-[13px] text-muted">
@@ -41,17 +32,44 @@ function Field({
 export function LoginForm({ next }: { next?: string }) {
   const [state, formAction, pending] = useActionState(login, initialState);
   const [showPassword, setShowPassword] = useState(false);
+  const [as, setAs] = useState<SessionKind>(state.as ?? (next?.startsWith("/chat") ? "customer" : "advisor"));
   const errors = state.fieldErrors ?? {};
+  const customer = as === "customer";
 
   return (
     <form action={formAction} noValidate className="mt-7 space-y-4">
       {next && <input type="hidden" name="next" value={next} />}
-      <Field id="username" label="Username" error={errors.username}>
+      <input type="hidden" name="as" value={as} />
+
+      <div role="radiogroup" aria-label="Sign in as" className="relative grid grid-cols-2 rounded-full bg-well p-1">
+        <span
+          aria-hidden
+          className={`absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full bg-white shadow-sm transition-transform duration-200 ${
+            customer ? "translate-x-full" : ""
+          }`}
+        />
+        {(["advisor", "customer"] as const).map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            role="radio"
+            aria-checked={as === kind}
+            onClick={() => setAs(kind)}
+            className={`relative z-10 h-9 rounded-full text-[13.5px] transition-colors ${
+              as === kind ? "font-medium text-ink" : "text-muted hover:text-ink"
+            }`}
+          >
+            {kind === "advisor" ? "Workshop staff" : "Customer"}
+          </button>
+        ))}
+      </div>
+
+      <Field id="username" label={customer ? "Email" : "Username"} error={errors.username}>
         <input
           id="username"
           name="username"
-          type="text"
-          autoComplete="username"
+          type={customer ? "email" : "text"}
+          autoComplete={customer ? "email" : "username"}
           autoCapitalize="none"
           spellCheck={false}
           autoFocus
@@ -59,7 +77,7 @@ export function LoginForm({ next }: { next?: string }) {
           aria-invalid={!!errors.username}
           aria-describedby={errors.username ? "username-error" : undefined}
           className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-subtle"
-          placeholder="e.g. rahul.sharma"
+          placeholder={customer ? "you@example.com" : "e.g. rahul.sharma"}
         />
       </Field>
 

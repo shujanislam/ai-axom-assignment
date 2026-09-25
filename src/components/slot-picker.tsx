@@ -3,11 +3,21 @@
 import { useState, useTransition } from "react";
 import { CheckIcon } from "@/components/icons";
 import { Button } from "@/components/ui";
-import { bookSlot } from "./actions";
 
-export type SlotDay = { day: string; slots: { iso: string; time: string }[] };
+import type { SlotDay } from "@/lib/server/slots";
 
-export function SlotPicker({ appointmentId, days }: { appointmentId: string; days: SlotDay[] }) {
+export type { SlotDay };
+
+/** Free slots grouped by day. `book` is a server action bound to what is being booked. */
+export function SlotPicker({
+  days,
+  book,
+  submitLabel = "Confirm slot",
+}: {
+  days: SlotDay[];
+  book: (slotIso: string) => Promise<{ error?: string }>;
+  submitLabel?: string;
+}) {
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [booking, startTransition] = useTransition();
@@ -49,7 +59,7 @@ export function SlotPicker({ appointmentId, days }: { appointmentId: string; day
           selected &&
           startTransition(async () => {
             setError(null);
-            const result = await bookSlot(appointmentId, selected);
+            const result = await book(selected);
             if (result.error) {
               setError(result.error);
               setSelected(null);
@@ -57,7 +67,7 @@ export function SlotPicker({ appointmentId, days }: { appointmentId: string; day
           })
         }
       >
-        {booking ? "Booking…" : "Confirm slot"}
+        {booking ? "Booking…" : submitLabel}
       </Button>
       {error && <p className="mt-3 text-center text-[13px] text-amber">{error}</p>}
     </div>

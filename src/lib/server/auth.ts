@@ -42,10 +42,35 @@ export async function verifyCredentials(username: string, password: string): Pro
   return { id: row.id, name: row.name, username: row.username, email: row.email, role: row.role };
 }
 
+async function currentSession() {
+  return readSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+}
+
 /** The signed-in advisor for this request, or null. Deduplicated per render. */
 export const getCurrentAdvisor = cache(async (): Promise<Advisor | null> => {
-  const advisorId = readSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
-  if (!advisorId) return null;
-  const rows = await sql`SELECT id, name, username, email, role FROM advisors WHERE id = ${advisorId}`;
+  const session = await currentSession();
+  if (session?.kind !== "advisor") return null;
+  const rows = await sql`SELECT id, name, username, email, role FROM advisors WHERE id = ${session.id}`;
   return (rows[0] as Advisor | undefined) ?? null;
+});
+
+export type CustomerAccount = { id: string; name: string; email: string };
+
+/** Customers sign in with their email. Customers without a password cannot sign in. */
+export async function verifyCustomerCredentials(email: string, password: string): Promise<CustomerAccount | null> {
+  const rows = await sql`
+    SELECT id, name, email, password FROM customers
+    WHERE lower(email) = lower(${email}) AND password IS NOT NULL
+    LIMIT 1`;
+  const row = rows[0];
+  if (!row || !passwordMatches(row.password, password)) return null;
+  return { id: row.id, name: row.name, email: row.email };
+}
+
+/** The signed-in customer for this request, or null. Deduplicated per render. */
+export const getCurrentCustomer = cache(async (): Promise<CustomerAccount | null> => {
+  const session = await currentSession();
+  if (session?.kind !== "customer") return null;
+  const rows = await sql`SELECT id, name, email FROM customers WHERE id = ${session.id}`;
+  return (rows[0] as CustomerAccount | undefined) ?? null;
 });

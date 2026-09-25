@@ -10,6 +10,7 @@ export default async function ServiceDuePage() {
 
   const items: DueItem[] = rows.map((r) => ({
     id: r.id,
+    fromChat: r.source === "CHAT",
     plate: r.vehicle_number,
     customer: r.customer_name,
     phone: r.phone_number,
@@ -27,7 +28,7 @@ export default async function ServiceDuePage() {
   const owners = new Set(rows.map((r) => r.customer_name)).size;
 
   const summary = [
-    { label: "To review", value: rows.length, unit: "services", note: "Suggested from completed visits" },
+    { label: "To review", value: rows.length, unit: "services", note: "From completed visits and chat" },
     {
       label: "High priority",
       value: urgent,

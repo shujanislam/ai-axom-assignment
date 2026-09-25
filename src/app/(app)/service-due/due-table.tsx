@@ -2,13 +2,14 @@
 
 import { Fragment, useState, useTransition } from "react";
 import { CheckIcon, SearchIcon } from "@/components/icons";
-import { Button, ButtonLink, Card, Dot, PageHeader, Row, type Tone } from "@/components/ui";
+import { Button, ButtonLink, Card, Dot, PageHeader, Row, Tag, type Tone } from "@/components/ui";
 import { dueFilters, humanize, priorityLevel, type Priority } from "@/lib/format";
 import { approveFollowUp, type ApproveResult } from "./actions";
 import { ReevaluateButton } from "./reevaluate-button";
 
 export type DueItem = {
   id: string;
+  fromChat: boolean;
   plate: string;
   customer: string;
   phone: string;
@@ -47,7 +48,7 @@ export function ServiceDueView({ today, summary, items }: { today: string; summa
     <>
       <PageHeader
         title="Service due"
-        subtitle={`${today} · follow-ups suggested from completed visits`}
+        subtitle={`${today} · follow-ups from completed visits and customer chats`}
         actions={
           <>
             <ReevaluateButton />
@@ -139,7 +140,10 @@ export function ServiceDueView({ today, summary, items }: { today: string; summa
                       {v.customer}
                       {v.vehicleType && ` · ${v.vehicleType}`}
                     </td>
-                    <td className="px-1 py-[17px]">{v.title}</td>
+                    <td className="px-1 py-[17px]">
+                      {v.title}
+                      {v.fromChat && <Tag className="ml-2">From chat</Tag>}
+                    </td>
                     <td className="px-1 py-[17px] tabular">
                       {v.lastService ?? <span className="text-subtle">None</span>}
                     </td>

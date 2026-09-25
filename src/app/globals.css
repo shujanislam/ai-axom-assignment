@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../node_modules/streamdown/dist/*.js";
 
 :root {
   --background: #f2f1ee;
@@ -26,6 +27,15 @@
   --color-leaf-soft: #e8f0de;
   --color-idle: #d6d3cd;
   --font-sans: var(--font-inter);
+
+  /* Tokens Streamdown (chat Markdown) expects. "muted" is taken by our text colour; see .chat-md. */
+  --color-foreground: var(--foreground);
+  --color-background: #ffffff;
+  --color-border: #ebe9e4;
+  --color-muted-foreground: #7c776f;
+  --color-primary: var(--foreground);
+  --color-primary-foreground: #ffffff;
+  --color-sidebar: #f4f3f0;
 }
 
 body {
@@ -49,4 +59,17 @@ body {
     linear-gradient(to right, rgba(23, 23, 15, 0.065) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(23, 23, 15, 0.065) 1px, transparent 1px);
   background-size: 15px 15px, 15px 15px, 90px 90px, 90px 90px;
+}
+
+/* Chat Markdown: our bg-muted is a text grey, so give Streamdown's muted surfaces the well colour. */
+.chat-md .bg-muted,
+.chat-md .bg-muted\/40,
+.chat-md .bg-muted\/80 {
+  background-color: var(--color-well);
+}
+.chat-md > :first-child {
+  margin-top: 0;
+}
+.chat-md > :last-child {
+  margin-bottom: 0;
 }

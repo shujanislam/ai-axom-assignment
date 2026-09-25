@@ -2,28 +2,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SparkIcon } from "@/components/icons";
 import { getBookingAppointment } from "@/lib/server/queries";
-import { formatSlot, getFreeSlots, WORKSHOP_TZ } from "@/lib/server/slots";
-import { SlotPicker, type SlotDay } from "./slot-picker";
+import { formatSlot, getFreeSlots, groupSlotsByDay } from "@/lib/server/slots";
+import { SlotPicker } from "@/components/slot-picker";
+import { bookSlot } from "./actions";
 
 export const metadata: Metadata = { title: "Book your service · Servicedesk" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function groupByDay(slots: Date[]): SlotDay[] {
-  const days = new Map<string, SlotDay>();
-  for (const slot of slots) {
-    const day = slot.toLocaleDateString("en-GB", {
-      timeZone: WORKSHOP_TZ,
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    });
-    const time = slot.toLocaleTimeString("en-GB", { timeZone: WORKSHOP_TZ, hour: "2-digit", minute: "2-digit" });
-    if (!days.has(day)) days.set(day, { day, slots: [] });
-    days.get(day)!.slots.push({ iso: slot.toISOString(), time });
-  }
-  return [...days.values()];
-}
 
 export default async function BookingPage({ params }: PageProps<"/[appointmentId]">) {
   const { appointmentId } = await params;
@@ -42,7 +27,7 @@ export default async function BookingPage({ params }: PageProps<"/[appointmentId
         <p className="mt-1 text-[13.5px] text-muted">
           Pick a time to bring your {vehicle} in. Times are in India time; the visit takes about an hour.
         </p>
-        <SlotPicker appointmentId={appointment.id} days={groupByDay(await getFreeSlots())} />
+        <SlotPicker days={groupSlotsByDay(await getFreeSlots())} book={bookSlot.bind(null, appointment.id)} />
       </>
     );
   } else if (appointment.status === "SCHEDULED" && appointment.scheduled_at) {

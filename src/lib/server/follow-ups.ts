@@ -1,12 +1,8 @@
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import { formatDate, priorities, recommendationTypes, type Priority } from "../format";
+import { aiClient, aiModel, parseJsonObject } from "./ai";
 import { sql } from "./db";
 
-// NVIDIA's API is OpenAI-compatible, so the openai client just points at it.
-const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
-const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
-/** NVIDIA's free tier can stall for minutes; give up on a batch rather than hang. */
-const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 120_000);
 /** Vehicles per model call. Batches run in parallel, so smaller means faster. */
 const AI_BATCH_SIZE = 3;
 
@@ -58,7 +54,7 @@ async function getVehicleContext() {
       ), '[]') AS open_appointments,
       COALESCE((
         SELECT json_agg(r.title) FROM recommendations r
-        WHERE r.vehicle_id = v.id AND r.source = 'FOLLOW_UP' AND r.advisor_action = 'PENDING'
+        WHERE r.vehicle_id = v.id AND r.source IN ('FOLLOW_UP', 'CHAT') AND r.advisor_action = 'PENDING'
       ), '[]') AS pending_follow_ups
     FROM vehicles v
     JOIN LATERAL (
@@ -79,7 +75,7 @@ async function insertFollowUps(rows: Candidate[]) {
       customer_id uuid, vehicle_id uuid, recommendation_type text, title text, description text, priority text)
     WHERE NOT EXISTS (
       SELECT 1 FROM recommendations r
-      WHERE r.vehicle_id = x.vehicle_id AND r.source = 'FOLLOW_UP'
+      WHERE r.vehicle_id = x.vehicle_id AND r.source IN ('FOLLOW_UP', 'CHAT')
         AND r.advisor_action = 'PENDING' AND lower(r.title) = lower(x.title)
     )
     RETURNING (SELECT vehicle_number FROM vehicles WHERE id = vehicle_id) AS vehicle_number, title, priority`;
@@ -193,7 +189,7 @@ type ModelRecommendation = {
 
 async function askModel(client: OpenAI, input: object[], today: string): Promise<ModelRecommendation[]> {
   const completion = await client.chat.completions.create({
-    model: process.env.NVIDIA_MODEL ?? DEFAULT_MODEL,
+    model: aiModel(),
     temperature: 0.2,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
@@ -202,13 +198,7 @@ async function askModel(client: OpenAI, input: object[], today: string): Promise
   });
 
   const content = completion.choices[0]?.message?.content ?? "";
-  // Some models wrap JSON in ```json fences or add text around it; take the outermost object.
-  const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
-  try {
-    return (JSON.parse(json) as { recommendations?: ModelRecommendation[] }).recommendations ?? [];
-  } catch {
-    throw new Error(`Model did not return valid JSON:\n${content}`);
-  }
+  return parseJsonObject<{ recommendations?: ModelRecommendation[] }>(content).recommendations ?? [];
 }
 
 function toCandidate(r: ModelRecommendation, byPlate: Map<string, VehicleContext>): Candidate | null {
@@ -236,8 +226,8 @@ function toCandidate(r: ModelRecommendation, byPlate: Map<string, VehicleContext
 
 /** Model review of visit notes, in small parallel batches. Skips vehicles with nothing noted. */
 async function evaluateNotes(vehicles: VehicleContext[], justAdded: Candidate[], today: string) {
-  const apiKey = process.env.NVIDIA_API_KEY;
-  if (!apiKey) {
+  const client = aiClient();
+  if (!client) {
     console.warn("[follow-ups] NVIDIA_API_KEY is not set; skipping the AI review of visit notes");
     return [];
   }
@@ -260,7 +250,6 @@ async function evaluateNotes(vehicles: VehicleContext[], justAdded: Candidate[],
     }));
   if (input.length === 0) return [];
 
-  const client = new OpenAI({ apiKey, baseURL: NVIDIA_BASE_URL, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
   const batches = Array.from({ length: Math.ceil(input.length / AI_BATCH_SIZE) }, (_, i) =>
     input.slice(i * AI_BATCH_SIZE, (i + 1) * AI_BATCH_SIZE),
   );

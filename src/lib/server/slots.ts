@@ -46,3 +46,22 @@ export function formatSlot(value: Date | string) {
     hour12: false,
   });
 }
+
+export type SlotDay = { day: string; slots: { iso: string; time: string }[] };
+
+/** Slots grouped by India-time day, for the slot picker. */
+export function groupSlotsByDay(slots: Date[]): SlotDay[] {
+  const days = new Map<string, SlotDay>();
+  for (const slot of slots) {
+    const day = slot.toLocaleDateString("en-GB", {
+      timeZone: WORKSHOP_TZ,
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    });
+    const time = slot.toLocaleTimeString("en-GB", { timeZone: WORKSHOP_TZ, hour: "2-digit", minute: "2-digit" });
+    if (!days.has(day)) days.set(day, { day, slots: [] });
+    days.get(day)!.slots.push({ iso: slot.toISOString(), time });
+  }
+  return [...days.values()];
+}

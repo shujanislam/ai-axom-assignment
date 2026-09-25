@@ -19,7 +19,9 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
         <section className="mt-8 rounded-[20px] bg-white px-7 pb-7 pt-8">
           <h1 className="text-[26px] font-bold italic leading-tight tracking-[-0.03em]">Sign in</h1>
-          <p className="mt-1 text-[13.5px] text-muted">Use your workshop account to open today’s desk.</p>
+          <p className="mt-1 text-[13.5px] text-muted">
+            Staff open today’s desk; customers chat with the workshop and book visits.
+          </p>
           <LoginForm next={typeof next === "string" ? next : undefined} />
         </section>
 
