@@ -9,7 +9,7 @@ import { formatDateTime } from "@/lib/format";
 import { getConversations, getThread } from "@/lib/server/chat";
 import { replyToCustomer } from "./actions";
 
-export const metadata: Metadata = { title: "Messages · Servicedesk" };
+export const metadata: Metadata = { title: "Messages · gear-ai" };
 
 export default async function MessagesPage({ searchParams }: PageProps<"/messages">) {
   const conversations = await getConversations();

@@ -50,7 +50,7 @@ export async function sendServiceDueEmail(mail: ServiceDueEmail) {
     "",
     `Pick a time that suits you: ${mail.link}`,
     "",
-    "Servicedesk",
+    "gear-ai",
   ].join("\n");
 
   const html = `
@@ -66,11 +66,11 @@ export async function sendServiceDueEmail(mail: ServiceDueEmail) {
     </a>
   </p>
   <p style="margin:0;color:#6b665e;font-size:13px">Or open this link: ${escape(mail.link)}</p>
-  <p style="margin:24px 0 0">Servicedesk</p>
+  <p style="margin:24px 0 0">gear-ai</p>
 </div>`;
 
   await getTransporter().sendMail({
-    from: `"Servicedesk" <${process.env.GMAIL_USER}>`,
+    from: `"gear-ai" <${process.env.GMAIL_USER}>`,
     to: recipient(mail.to),
     subject,
     text,
@@ -108,7 +108,7 @@ export async function sendInvoiceEmail(mail: InvoiceEmail) {
     `  Total  ${formatRupees(invoice.total)}`,
     "",
     "Thank you for servicing with us.",
-    "Servicedesk",
+    "gear-ai",
   ].join("\n");
 
   const cell = "padding:8px 0;border-bottom:1px solid #e9e7e2";
@@ -138,11 +138,11 @@ export async function sendInvoiceEmail(mail: InvoiceEmail) {
     <tr><td style="padding:10px 0;border-top:2px solid #1f1c18;font-weight:600" colspan="2">Total</td>
       <td style="padding:10px 0;border-top:2px solid #1f1c18;text-align:right;font-weight:600">${formatRupees(invoice.total)}</td></tr>
   </table>
-  <p style="margin:24px 0 0">Thank you for servicing with us.<br>Servicedesk</p>
+  <p style="margin:24px 0 0">Thank you for servicing with us.<br>gear-ai</p>
 </div>`;
 
   await getTransporter().sendMail({
-    from: `"Servicedesk" <${process.env.GMAIL_USER}>`,
+    from: `"gear-ai" <${process.env.GMAIL_USER}>`,
     to: recipient(mail.to),
     subject: `Invoice ${invoice.number} · ${mail.service} for ${mail.plate}`,
     text,

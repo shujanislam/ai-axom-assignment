@@ -5,7 +5,7 @@ import { formatDate } from "@/lib/format";
 import { getAcceptanceStats, getRecommendations, getServiceHistory, getVehicle } from "@/lib/server/queries";
 import { AddObservation, SuggestionList } from "./suggestion-list";
 
-export const metadata: Metadata = { title: "Suggestions · Servicedesk" };
+export const metadata: Metadata = { title: "Suggestions · gear-ai" };
 
 const wordingRules = {
   body: "Every line reaches the workshop as an inspection instruction. No fault is named until the technician confirms it, and no part is priced until the customer approves the estimate.",

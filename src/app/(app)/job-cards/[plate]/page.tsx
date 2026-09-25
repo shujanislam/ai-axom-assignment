@@ -8,7 +8,7 @@ import { JobCardActions } from "./job-card-actions";
 
 export async function generateMetadata({ params }: PageProps<"/job-cards/[plate]">): Promise<Metadata> {
   const { plate } = await params;
-  return { title: `JC-${decodeURIComponent(plate)} · Servicedesk` };
+  return { title: `JC-${decodeURIComponent(plate)} · gear-ai` };
 }
 
 const statusStyle: Record<string, string> = {

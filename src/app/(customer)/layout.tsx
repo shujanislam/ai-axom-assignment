@@ -16,7 +16,7 @@ export default async function CustomerLayout({ children }: { children: ReactNode
           <span className="grid size-[30px] place-items-center rounded-[9px] bg-ink text-white">
             <SparkIcon size={15} strokeWidth={1.8} />
           </span>
-          <span className="text-[15px] font-semibold italic tracking-[-0.02em]">Servicedesk</span>
+          <span className="text-[15px] font-semibold italic tracking-[-0.02em]">gear-ai</span>
         </span>
         <span className="flex items-center gap-3 text-[13px] text-muted">
           {customer.name}

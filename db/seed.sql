@@ -1,5 +1,5 @@
 -- ============================================================
--- DEMO DATA for Servicedesk
+-- DEMO DATA for gear-ai
 -- Additive only: never drops or updates existing rows, and leaves the
 -- advisors table alone (appointments are assigned to existing advisors).
 -- Skips itself entirely when appointments already exist.

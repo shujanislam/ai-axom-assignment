@@ -5,7 +5,7 @@ import { formatDateTime } from "@/lib/format";
 import { formatRupees, invoiceNumber } from "@/lib/invoice";
 import { getInvoice } from "@/lib/server/queries";
 
-export const metadata: Metadata = { title: "Invoice · Servicedesk" };
+export const metadata: Metadata = { title: "Invoice · gear-ai" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

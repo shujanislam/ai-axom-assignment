@@ -17,7 +17,7 @@ import { getComplaints, getRecommendations, getServiceHistory, getVehicle } from
 
 export async function generateMetadata({ params }: PageProps<"/vehicles/[plate]">): Promise<Metadata> {
   const { plate } = await params;
-  return { title: `${decodeURIComponent(plate)} · Servicedesk` };
+  return { title: `${decodeURIComponent(plate)} · gear-ai` };
 }
 
 const BRAKE = /brake/i;

@@ -5,7 +5,7 @@ import { formatDateTime } from "@/lib/format";
 import { formatRupees, invoiceNumber } from "@/lib/invoice";
 import { getInvoices } from "@/lib/server/queries";
 
-export const metadata: Metadata = { title: "Invoices · Servicedesk" };
+export const metadata: Metadata = { title: "Invoices · gear-ai" };
 
 export default async function InvoicesPage() {
   const invoices = await getInvoices();

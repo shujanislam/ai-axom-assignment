@@ -6,7 +6,7 @@ import { formatSlot, getFreeSlots, groupSlotsByDay } from "@/lib/server/slots";
 import { SlotPicker } from "@/components/slot-picker";
 import { bookSlot } from "./actions";
 
-export const metadata: Metadata = { title: "Book your service · Servicedesk" };
+export const metadata: Metadata = { title: "Book your service · gear-ai" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -52,7 +52,7 @@ export default async function BookingPage({ params }: PageProps<"/[appointmentId
           <span className="grid size-[34px] place-items-center rounded-[10px] bg-ink text-white">
             <SparkIcon size={17} strokeWidth={1.8} />
           </span>
-          <span className="text-[17px] font-semibold italic tracking-[-0.02em]">Servicedesk</span>
+          <span className="text-[17px] font-semibold italic tracking-[-0.02em]">gear-ai</span>
         </div>
 
         <section className="mt-8 rounded-[20px] bg-white px-7 pb-7 pt-8">

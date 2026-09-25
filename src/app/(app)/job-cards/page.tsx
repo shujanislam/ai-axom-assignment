@@ -4,7 +4,7 @@ import { Card, PageHeader, Tag } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { getJobCards } from "@/lib/server/queries";
 
-export const metadata: Metadata = { title: "Job cards · Servicedesk" };
+export const metadata: Metadata = { title: "Job cards · gear-ai" };
 
 export default async function JobCardsPage() {
   const cards = await getJobCards();

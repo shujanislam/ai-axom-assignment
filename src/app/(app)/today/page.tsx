@@ -5,7 +5,7 @@ import { Card, PageHeader, Tag } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import { getArrivals } from "@/lib/server/queries";
 
-export const metadata: Metadata = { title: "Today · Servicedesk" };
+export const metadata: Metadata = { title: "Today · gear-ai" };
 
 export default async function TodayPage() {
   const arrivals = await getArrivals();

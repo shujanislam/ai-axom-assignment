@@ -40,7 +40,7 @@ export function Sidebar({ advisor }: { advisor: { name: string; role: string } }
         <span className="grid size-[30px] place-items-center rounded-[9px] bg-ink text-white">
           <SparkIcon size={15} strokeWidth={1.8} />
         </span>
-        <span className="text-[15px] font-semibold italic tracking-[-0.02em]">Servicedesk</span>
+        <span className="text-[15px] font-semibold italic tracking-[-0.02em]">gear-ai</span>
       </Link>
 
       <nav className="mt-4 flex gap-1 overflow-x-auto lg:mt-8 lg:flex-col lg:gap-[5px] lg:overflow-visible">

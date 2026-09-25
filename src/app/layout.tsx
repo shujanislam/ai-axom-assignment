@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Servicedesk",
+  title: "gear-ai",
   description: "Service advisor desk for the workshop",
 };
 

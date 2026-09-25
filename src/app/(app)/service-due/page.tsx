@@ -3,7 +3,7 @@ import { formatDate } from "@/lib/format";
 import { countApprovedFollowUps, getPendingFollowUps } from "@/lib/server/queries";
 import { ServiceDueView, type DueItem } from "./due-table";
 
-export const metadata: Metadata = { title: "Service due · Servicedesk" };
+export const metadata: Metadata = { title: "Service due · gear-ai" };
 
 export default async function ServiceDuePage() {
   const [rows, approved] = await Promise.all([getPendingFollowUps(), countApprovedFollowUps()]);

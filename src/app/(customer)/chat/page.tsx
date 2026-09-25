@@ -9,7 +9,7 @@ import { getThread } from "@/lib/server/chat";
 import { getFreeSlots, groupSlotsByDay } from "@/lib/server/slots";
 import { bookFromChat, sendMessage } from "./actions";
 
-export const metadata: Metadata = { title: "Messages · Servicedesk" };
+export const metadata: Metadata = { title: "Messages · gear-ai" };
 
 export default async function CustomerChatPage() {
   // Layouts and pages render in parallel, so the page checks too rather than trusting the layout.

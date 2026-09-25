@@ -5,7 +5,7 @@ import { completableStatuses, formatDateTime, statusMeta } from "@/lib/format";
 import { getAppointments } from "@/lib/server/queries";
 import { CompleteButton } from "./complete-button";
 
-export const metadata: Metadata = { title: "Appointments · Servicedesk" };
+export const metadata: Metadata = { title: "Appointments · gear-ai" };
 
 export default async function AppointmentsPage() {
   const appointments = await getAppointments();

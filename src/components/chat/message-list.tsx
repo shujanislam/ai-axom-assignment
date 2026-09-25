@@ -40,7 +40,7 @@ export function MessageList({
               : "Customer"
             : m.sender === "ADVISOR"
               ? (m.advisor_name ?? "Advisor")
-              : "Servicedesk assistant";
+              : "gear-ai assistant";
         return (
           <li key={m.id} className={`flex flex-col ${own ? "items-end" : "items-start"}`}>
             <span className="mb-1 px-1 text-[11.5px] text-muted">
