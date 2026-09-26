@@ -4,16 +4,24 @@ export const WORKSHOP_TZ = "Asia/Kolkata";
 const TZ_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const SLOT_HOURS = [10, 11, 12, 14, 15, 16]; // 13:00 is lunch
 const DAYS_AHEAD = 7;
+/** A same-day slot is offered only if it starts at least this far ahead, so the workshop can prepare. */
+const LEAD_TIME_MS = 2 * 60 * 60 * 1000;
 const SUNDAY = 0;
 
-/** Every slot offered from tomorrow for the next week, Monday to Saturday. */
+/**
+ * Every slot offered from today (those at least LEAD_TIME_MS away) through the next week,
+ * Monday to Saturday.
+ */
 export function upcomingSlots(now = new Date()): Date[] {
   const local = new Date(now.getTime() + TZ_OFFSET_MS);
   const [y, m, d] = [local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()];
   const slots: Date[] = [];
-  for (let day = 1; day <= DAYS_AHEAD; day++) {
+  for (let day = 0; day <= DAYS_AHEAD; day++) {
     if (new Date(Date.UTC(y, m, d + day)).getUTCDay() === SUNDAY) continue;
-    for (const hour of SLOT_HOURS) slots.push(new Date(Date.UTC(y, m, d + day, hour) - TZ_OFFSET_MS));
+    for (const hour of SLOT_HOURS) {
+      const slot = new Date(Date.UTC(y, m, d + day, hour) - TZ_OFFSET_MS);
+      if (slot.getTime() >= now.getTime() + LEAD_TIME_MS) slots.push(slot);
+    }
   }
   return slots;
 }
@@ -65,16 +73,18 @@ export function formatWindow(startsAt: Date | string, endsAt: Date | string) {
 
 export type SlotDay = { day: string; slots: { iso: string; time: string }[] };
 
-/** Slots grouped by India-time day, for the slot picker. */
-export function groupSlotsByDay(slots: Date[]): SlotDay[] {
+/** Slots grouped by India-time day, for the slot picker. Today's are labelled as such. */
+export function groupSlotsByDay(slots: Date[], now = new Date()): SlotDay[] {
+  const dayOf = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: WORKSHOP_TZ });
   const days = new Map<string, SlotDay>();
   for (const slot of slots) {
-    const day = slot.toLocaleDateString("en-GB", {
+    const date = slot.toLocaleDateString("en-GB", {
       timeZone: WORKSHOP_TZ,
       weekday: "long",
       day: "numeric",
       month: "long",
     });
+    const day = dayOf(slot) === dayOf(now) ? `Today, ${date}` : date;
     const time = slot.toLocaleTimeString("en-GB", { timeZone: WORKSHOP_TZ, hour: "2-digit", minute: "2-digit" });
     if (!days.has(day)) days.set(day, { day, slots: [] });
     days.get(day)!.slots.push({ iso: slot.toISOString(), time });
