@@ -105,22 +105,37 @@ export function assistantTyping(thread: ChatMessage[]) {
 export type Conversation = {
   customer_id: string;
   customer_name: string;
+  phone_number: string;
+  vehicles: string[];
   last_body: string;
   last_sender: Sender;
+  last_kind: ChatMessage["kind"];
   last_at: Date;
-  messages: number;
+  /** Customer messages since the workshop (advisor or assistant) last wrote. */
+  unanswered: number;
 };
 
 export async function getConversations() {
   const rows = await sql`
-    SELECT c.id AS customer_id, c.name AS customer_name, last.body AS last_body,
-      last.sender AS last_sender, last.created_at AS last_at, counts.n AS messages
+    SELECT c.id AS customer_id, c.name AS customer_name, c.phone_number,
+      COALESCE((
+        SELECT array_agg(DISTINCT v.vehicle_number) FROM vehicles v
+        WHERE v.id IN (
+          SELECT vehicle_id FROM appointments WHERE customer_id = c.id
+          UNION SELECT vehicle_id FROM services WHERE customer_id = c.id
+        )
+      ), '{}') AS vehicles,
+      last.body AS last_body, last.sender AS last_sender, last.kind AS last_kind, last.created_at AS last_at,
+      (SELECT count(*)::int FROM messages m
+        WHERE m.customer_id = c.id AND m.sender = 'CUSTOMER'
+          AND m.created_at > COALESCE((
+            SELECT max(created_at) FROM messages w WHERE w.customer_id = c.id AND w.sender <> 'CUSTOMER'
+          ), '-infinity')) AS unanswered
     FROM customers c
     JOIN LATERAL (
-      SELECT body, sender, created_at FROM messages m
+      SELECT body, sender, kind, created_at FROM messages m
       WHERE m.customer_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1
     ) last ON true
-    JOIN LATERAL (SELECT count(*)::int AS n FROM messages m WHERE m.customer_id = c.id) counts ON true
     ORDER BY last.created_at DESC`;
   return rows as Conversation[];
 }

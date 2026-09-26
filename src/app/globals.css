@@ -73,3 +73,10 @@ body {
 .chat-md > :last-child {
   margin-bottom: 0;
 }
+
+/* Chat thread background: a faint dot grid on the canvas colour, like a messenger wallpaper. */
+.chat-wallpaper {
+  background-color: #ecebe6;
+  background-image: radial-gradient(rgba(27, 25, 21, 0.07) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
