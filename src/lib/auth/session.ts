@@ -42,4 +42,4 @@ export function readSessionToken(token: string | undefined): Session | null {
 }
 
 /** Where each kind of user lands after signing in. */
-export const HOME: Record<SessionKind, string> = { advisor: "/service-due", customer: "/chat" };
+export const HOME: Record<SessionKind, string> = { advisor: "/", customer: "/chat" };

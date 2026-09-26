@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SparkIcon } from "@/components/icons";
 import { getBookingAppointment } from "@/lib/booking/queries";
+import { bookableStatuses } from "@/lib/format";
 import { formatSlot, groupSlotsByDay } from "@/lib/booking/slots";
 import { getFreeSlots } from "@/lib/job-cards/plan";
 import { SlotPicker } from "@/components/booking/slot-picker";
@@ -22,7 +23,7 @@ export default async function BookingPage({ params }: PageProps<"/[appointmentId
     : appointment.vehicle_number;
 
   let body;
-  if (appointment.status === "DUE") {
+  if (bookableStatuses.includes(appointment.status)) {
     const { job, slots } = await getFreeSlots(appointment.appointment_type);
     const hours = job.labour_hours === 1 ? "about an hour" : `about ${job.labour_hours} hours`;
     body = (

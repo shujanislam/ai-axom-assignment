@@ -8,7 +8,15 @@ import { getCurrentCustomer } from "@/lib/auth/accounts";
 import { bookingState, getThread } from "@/lib/chat/thread";
 import { groupSlotsByDay, type SlotDay } from "@/lib/booking/slots";
 import { getFreeSlots } from "@/lib/job-cards/plan";
-import { answerChatQuestion, bookFromChat, sendMessage, skipChatBooking, skipChatQuestions } from "./actions";
+import {
+  answerChatQuestion,
+  answerChatReason,
+  bookFromChat,
+  rateVisit,
+  sendMessage,
+  skipChatBooking,
+  skipChatQuestions,
+} from "./actions";
 
 export const metadata: Metadata = { title: "Messages · gear-ai" };
 
@@ -46,6 +54,8 @@ export default async function CustomerChatPage() {
             answer={(id) => answerChatQuestion.bind(null, id)}
             skipQuestions={(id) => skipChatQuestions.bind(null, id)}
             skipBooking={(id) => skipChatBooking.bind(null, id)}
+            rate={(id) => rateVisit.bind(null, id)}
+            reason={(id) => answerChatReason.bind(null, id)}
           />
         )}
         <ScrollToEnd count={thread.length} />

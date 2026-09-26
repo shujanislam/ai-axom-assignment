@@ -1,5 +1,5 @@
 // Writing to a thread: posting messages, answering questions, booking from a message, and skips.
-import type { Priority } from "@/lib/format";
+import { bookableStatuses, type Priority } from "@/lib/format";
 import { formatSlot } from "@/lib/booking/slots";
 import { sql } from "@/lib/db";
 import { bookWithJobCard, insertJobCard } from "@/lib/job-cards/plan";
@@ -107,7 +107,7 @@ export async function bookFromMessage(customerId: string, messageId: string, slo
       ? sql`
         WITH appt AS (
           UPDATE appointments SET status = 'SCHEDULED', scheduled_at = ${at}
-          WHERE id = ${message.appointment_id} AND customer_id = ${customerId} AND status = 'DUE'
+          WHERE id = ${message.appointment_id} AND customer_id = ${customerId} AND status = ANY(${bookableStatuses})
           RETURNING id, customer_id, vehicle_id, appointment_type
         ), card AS (${insertJobCard(plan)})
         SELECT appointment_type FROM appt`
@@ -142,16 +142,17 @@ export async function bookFromMessage(customerId: string, messageId: string, slo
 /**
  * Closes a booking offer the customer doesn't want. What it points at is left alone: a DUE
  * appointment can still be booked from the email link, a recommendation stays on /service-due.
+ * The reply is the retention question (see lib/retention), posted by the caller.
  */
 export async function skipBooking(customerId: string, messageId: string) {
   const rows = await sql`
     UPDATE messages SET dismissed_at = clock_timestamp()
     WHERE id = ${messageId} AND customer_id = ${customerId} AND kind = 'BOOKING' AND dismissed_at IS NULL
     RETURNING id`;
-  if (rows.length === 0) return false;
-  await postAssistantMessage(customerId, "No problem. Just message us here whenever you’d like to book a visit.");
-  return true;
+  return rows.length > 0;
 }
+
+export const SKIP_BOOKING_REPLY = "No problem. Just message us here whenever you’d like to book a visit.";
 
 /**
  * The customer skips the triage questions. No model call: the problem goes straight to an advisor

@@ -78,7 +78,7 @@ function toCandidate(r: ModelRecommendation, byPlate: Map<string, VehicleContext
 export async function evaluateNotes(vehicles: VehicleContext[], justAdded: Candidate[], today: string) {
   const client = aiClient();
   if (!client) {
-    console.warn("[follow-ups] NVIDIA_API_KEY is not set; skipping the AI review of visit notes");
+    console.warn("[follow-ups] GEMINI_API_KEY is not set; skipping the AI review of visit notes");
     return [];
   }
 

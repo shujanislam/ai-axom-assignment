@@ -1,12 +1,14 @@
 import "server-only";
 import { sql } from "@/lib/db";
+import { mechanicScore } from "@/lib/feedback/queries";
 import { jobWindow, upcomingSlots, WORKSHOP_TZ } from "@/lib/booking/slots";
 import { costFromLines, type InvoiceCost } from "@/lib/invoices/pricing";
 
 // Job cards are planned when an appointment is booked: the job's text (appointment type or
 // recommendation title) picks a skill from service_catalog, which says how long the job takes,
 // what it costs in labour and which parts it needs. The mechanic is the most experienced one with
-// that skill who is free for the whole job, then whoever has the fewest jobs that day.
+// that skill who is free for the whole job, then the best rated by customers, then whoever has the
+// fewest jobs that day.
 
 const HOUR_MS = 60 * 60 * 1000;
 /** Postgres exclusion_violation: job_cards_mechanic_overlap rejected a double-booked mechanic. */
@@ -100,6 +102,7 @@ export async function planJob(text: string, startsAt: Date): Promise<JobPlan> {
       JOIN mechanic_skills ms ON ms.mechanic_id = m.id AND ms.skill = w.skill
       WHERE ${mechanicIsFree()}
       ORDER BY ms.level DESC,
+        ${mechanicScore()} DESC,
         (SELECT count(*) FROM job_cards d
           WHERE d.mechanic_id = m.id AND d.status <> 'CANCELLED'
             AND (d.starts_at AT TIME ZONE ${WORKSHOP_TZ})::date = (w.starts_at AT TIME ZONE ${WORKSHOP_TZ})::date),
@@ -133,7 +136,8 @@ export async function planJob(text: string, startsAt: Date): Promise<JobPlan> {
 /**
  * INSERT for the plan's job card, to embed as a CTE after one named `appt` that returns the
  * appointment's id, customer_id and vehicle_id. Returns the card's id; does nothing if the
- * appointment already has a card.
+ * appointment already has a card, unless it was cancelled (a missed slot being rebooked): then
+ * that card is planned again.
  */
 export function insertJobCard(plan: JobPlan) {
   return sql`
@@ -144,7 +148,12 @@ export function insertJobCard(plan: JobPlan) {
       ${plan.mechanicId ? "ASSIGNED" : "DRAFT"}, ${JSON.stringify(plan.parts)}::jsonb, ${plan.partsShort},
       ${JSON.stringify(plan.estimate)}::jsonb
     FROM appt
-    ON CONFLICT (appointment_id) DO NOTHING
+    ON CONFLICT (appointment_id) DO UPDATE SET
+      skill = EXCLUDED.skill, title = EXCLUDED.title, mechanic_id = EXCLUDED.mechanic_id,
+      starts_at = EXCLUDED.starts_at, ends_at = EXCLUDED.ends_at, status = EXCLUDED.status,
+      parts = EXCLUDED.parts, parts_short = EXCLUDED.parts_short, estimate = EXCLUDED.estimate,
+      updated_at = clock_timestamp()
+    WHERE job_cards.status = 'CANCELLED'
     RETURNING id`;
 }
 

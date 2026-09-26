@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 export type InvoiceRow = {
   id: string;
   appointment_id: string;
+  customer_id: string;
   cost: InvoiceCost;
   created_at: Date;
   appointment_type: string;
@@ -18,7 +19,7 @@ export type InvoiceRow = {
 /** All invoices, newest first, or just the one with this id. */
 async function selectInvoices(id: string | null) {
   const rows = await sql`
-    SELECT i.id, i.appointment_id, i.cost, i.created_at, a.appointment_type,
+    SELECT i.id, i.appointment_id, a.customer_id, i.cost, i.created_at, a.appointment_type,
       v.vehicle_number, v.vehicle_type, c.name AS customer_name, c.email, c.phone_number
     FROM invoices i
     JOIN appointments a ON a.id = i.appointment_id

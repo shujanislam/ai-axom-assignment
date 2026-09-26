@@ -33,7 +33,7 @@ export async function reevaluateServiceDue(): Promise<ReevaluateResult> {
   await requireAdvisor();
   const rules = await runRulePass();
   if (!rules) return { ok: false };
-  const aiQueued = Boolean(process.env.NVIDIA_API_KEY);
+  const aiQueued = Boolean(process.env.GEMINI_API_KEY);
   if (aiQueued) after(() => runAiPass(rules));
   refresh();
   return { ok: true, added: rules.created.length, dueSoon: rules.dueSoon, aiQueued };

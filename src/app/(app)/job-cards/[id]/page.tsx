@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Stars } from "@/components/chat/feedback-form";
 import { CheckIcon } from "@/components/icons";
 import { ButtonLink, Card, Dot, PageHeader, Row, SectionLabel, Tag } from "@/components/ui";
 import { formatWindow } from "@/lib/booking/slots";
 import { actionLabel, humanize, jobCardNumber, jobCardStatus, onJobCard } from "@/lib/format";
+import { getAppointmentFeedback, getMechanicRating } from "@/lib/feedback/queries";
 import { formatRupees } from "@/lib/invoices/pricing";
 import { getJobCard, getMechanicOptions, getRecommendations } from "@/lib/job-cards/queries";
 import { CompleteButton } from "@/app/(app)/appointments/complete-button";
@@ -23,9 +25,11 @@ export default async function JobCardPage({ params }: PageProps<"/job-cards/[id]
   const card = await getJobCard(id);
   if (!card) notFound();
 
-  const [mechanics, recommendations] = await Promise.all([
+  const [mechanics, recommendations, feedback, mechanicRating] = await Promise.all([
     getMechanicOptions(card.id),
     getRecommendations(card.vehicle_id),
+    getAppointmentFeedback(card.appointment_id),
+    card.mechanic_id ? getMechanicRating(card.mechanic_id) : null,
   ]);
   const status = jobCardStatus[card.status];
   const open = card.status === "DRAFT" || card.status === "ASSIGNED" || card.status === "IN_PROGRESS";
@@ -146,6 +150,13 @@ export default async function JobCardPage({ params }: PageProps<"/job-cards/[id]
               <>
                 <p className="mt-3 text-[16px] font-semibold">{card.mechanic_name}</p>
                 {card.mechanic_phone && <p className="mt-0.5 text-[13px] text-muted">{card.mechanic_phone}</p>}
+                {mechanicRating?.average != null && (
+                  <p className="mt-2 flex items-center gap-2 text-[13px] text-muted">
+                    <Stars rating={Math.round(mechanicRating.average)} size={14} />
+                    {mechanicRating.average.toFixed(1)} from {mechanicRating.count}{" "}
+                    {mechanicRating.count === 1 ? "rating" : "ratings"}
+                  </p>
+                )}
               </>
             ) : (
               <p className="mt-3 text-[14px] text-amber">
@@ -154,6 +165,29 @@ export default async function JobCardPage({ params }: PageProps<"/job-cards/[id]
             )}
             {open && <MechanicPicker jobCardId={card.id} options={mechanics} />}
           </Card>
+
+          {feedback && (
+            <Card className="p-6">
+              <SectionLabel>Customer feedback</SectionLabel>
+              <div className="mt-3">
+                <Stars rating={feedback.rating} />
+              </div>
+              {feedback.comment && <p className="mt-2 text-[14px]">“{feedback.comment}”</p>}
+              {feedback.summary && <p className="mt-2 text-[12.5px] text-muted">{feedback.summary}</p>}
+              {feedback.topics.length > 0 && (
+                <p className="mt-3 flex flex-wrap gap-1.5">
+                  {feedback.topics.map((t) => (
+                    <Tag
+                      key={t.topic}
+                      className={t.sentiment === "NEGATIVE" ? "bg-amber-soft text-amber-ink" : undefined}
+                    >
+                      {humanize(t.topic)}: {humanize(t.sentiment)}
+                    </Tag>
+                  ))}
+                </p>
+              )}
+            </Card>
+          )}
 
           <Card className="p-6">
             <SectionLabel count={scope.length}>Accepted work for this vehicle</SectionLabel>

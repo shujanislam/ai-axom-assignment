@@ -97,6 +97,12 @@ export const CheckIcon = (p: IconProps) => (
   </Base>
 );
 
+export const StarIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" />
+  </Base>
+);
+
 /** Brake disc: target-like rings. */
 export const DiscIcon = (p: IconProps) => (
   <Base {...p}>

@@ -23,6 +23,7 @@ type NavItem = {
 };
 
 const nav: NavItem[] = [
+  { href: "/", label: "Home", icon: SparkIcon, match: (p) => p === "/" },
   { href: "/today", label: "Today", icon: HomeIcon, match: (p) => p.startsWith("/today") || p.startsWith("/vehicles") },
   { href: "/service-due", label: "Service due", icon: ListIcon, match: (p) => p.startsWith("/service-due") },
   { href: "/messages", label: "Messages", icon: ChatIcon, match: (p) => p.startsWith("/messages") },
@@ -36,7 +37,7 @@ export function Sidebar({ advisor }: { advisor: { name: string; role: string } }
 
   return (
     <aside className="flex shrink-0 flex-col px-4 pt-6 lg:sticky lg:top-0 lg:h-screen lg:w-[232px] lg:px-5 lg:pb-6 lg:pt-7">
-      <Link href="/service-due" className="flex items-center gap-2.5 px-2 lg:px-2.5">
+      <Link href="/" className="flex items-center gap-2.5 px-2 lg:px-2.5">
         <span className="grid size-[30px] place-items-center rounded-[9px] bg-ink text-white">
           <SparkIcon size={15} strokeWidth={1.8} />
         </span>

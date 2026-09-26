@@ -1,8 +1,9 @@
 // The AI assistant: replies to customers, runs problem triage (1-5 questions, then a verdict),
 // and offers bookings. See constants.ts for the limits it works within.
-import { priorities, recommendationTypes } from "@/lib/format";
+import { bookableStatuses, priorities, recommendationTypes } from "@/lib/format";
 import { aiClient, aiModel, parseJsonObject } from "@/lib/ai";
 import { sql } from "@/lib/db";
+import { getCustomerFeedback, type CustomerFeedback } from "@/lib/feedback/queries";
 import {
   COMPLAINT_TYPES,
   FALLBACK_REPLY,
@@ -26,11 +27,13 @@ type CustomerContext = {
   visits: { vehicle_number: string; service: string; date: string }[];
   open_appointments: { vehicle_number: string; type: string; status: string; scheduled_at: string | null }[];
   suggested: { vehicle_number: string; title: string; priority: string }[];
+  /** How they rated their recent visits, newest first. */
+  feedback: CustomerFeedback[];
   triage: OpenTriage | null;
 };
 
 async function getCustomerContext(customerId: string): Promise<CustomerContext> {
-  const [[customer], vehicles, visits, open, suggested, [triage]] = await Promise.all([
+  const [[customer], vehicles, visits, open, suggested, [triage], feedback] = await Promise.all([
     sql`SELECT name FROM customers WHERE id = ${customerId}`,
     sql`
       SELECT v.id, v.vehicle_number, v.vehicle_type, v.fuel_type FROM vehicles v
@@ -53,6 +56,7 @@ async function getCustomerContext(customerId: string): Promise<CustomerContext> 
       SELECT t.id, t.vehicle_id, t.summary,
         (SELECT count(*)::int FROM messages m WHERE m.triage_id = t.id AND m.kind = 'QUESTION') AS questions
       FROM triages t WHERE t.customer_id = ${customerId} AND t.status = 'OPEN'`,
+    getCustomerFeedback(customerId),
   ]);
   return {
     name: (customer as { name: string }).name,
@@ -60,13 +64,15 @@ async function getCustomerContext(customerId: string): Promise<CustomerContext> 
     visits: visits as CustomerContext["visits"],
     open_appointments: open as CustomerContext["open_appointments"],
     suggested: suggested as CustomerContext["suggested"],
+    feedback,
     triage: (triage as OpenTriage | undefined) ?? null,
   };
 }
 
 const SYSTEM_PROMPT = `You are the service assistant of a car workshop in India, chatting with a customer.
-You get the customer's vehicles, recent visits, open appointments, services already suggested, any
-problem currently being triaged, and the conversation so far. Answer the customer's latest message.
+You get the customer's vehicles, recent visits, open appointments, services already suggested, how
+they rated their recent visits (1-5 stars and what they said), any problem currently being
+triaged, and the conversation so far. Answer the customer's latest message.
 
 Reply with JSON only, no prose, exactly:
 {"reply":"...","problem":null,"question":null,"assessment":null,"booking":null}
@@ -96,6 +102,9 @@ not jump to an appointment. Find out what is going on with multiple-choice quest
 BOOKING. "booking": {"vehicle_number":"...","service":"max 60 chars"} only when the customer clearly
 asks to book a service that is not the problem being triaged. Otherwise null.
 
+- If they rated a recent visit 3 stars or less, they were let down: be extra careful and never
+  dismissive. If they bring it up, acknowledge it and say an advisor has their feedback. If a
+  problem looks like it comes from that visit, lean towards fault WORKSHOP and APPOINTMENT.
 - vehicle_number must be one of the customer's vehicles; if unclear, ask which one first.
 - Never quote prices, promise a diagnosis, or invent dates or times: the app shows free slots.`;
 
@@ -240,11 +249,11 @@ async function applyTurn(customerId: string, ctx: CustomerContext, turn: Assista
   const service = text(booking?.service, TITLE_MAX);
   if (!booking || !bookingVehicle || !service) return;
 
-  // Book the existing DUE appointment for this service if there is one, rather than a second.
+  // Book the existing open appointment for this service if there is one, rather than a second.
   const [due] = (await sql`
     SELECT id FROM appointments
     WHERE customer_id = ${customerId} AND vehicle_id = ${bookingVehicle.id}
-      AND status = 'DUE' AND lower(appointment_type) = lower(${service})
+      AND status = ANY(${bookableStatuses}) AND lower(appointment_type) = lower(${service})
     LIMIT 1`) as { id: string }[];
   const target = due
     ? { appointmentId: due.id }
@@ -276,14 +285,14 @@ export async function respondToCustomer(customerId: string) {
   const started = Date.now();
   try {
     const client = aiClient();
-    if (!client) throw new Error("NVIDIA_API_KEY is not set");
+    if (!client) throw new Error("GEMINI_API_KEY is not set");
 
     const [ctx, thread] = await Promise.all([getCustomerContext(customerId), getThread(customerId)]);
     const transcript = thread
       .slice(-HISTORY)
       .map((m) => {
         const who = m.sender === "CUSTOMER" ? "Customer" : m.sender === "ADVISOR" ? "Advisor" : "Assistant";
-        return m.kind === "QUESTION"
+        return m.kind === "QUESTION" || m.kind === "REASON"
           ? `${who} (question): ${m.body} [options: ${m.options?.join(" | ")}]`
           : `${who}: ${m.body}`;
       })

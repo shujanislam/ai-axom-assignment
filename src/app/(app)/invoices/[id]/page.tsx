@@ -24,9 +24,14 @@ export default async function InvoicePage({ params }: PageProps<"/invoices/[id]"
         title={invoiceNumber(invoice.id)}
         subtitle={`${invoice.appointment_type} · ${invoice.customer_name} · issued ${formatDateTime(invoice.created_at)}`}
         actions={
-          <ButtonLink variant="secondary" href="/invoices">
-            All invoices
-          </ButtonLink>
+          <>
+            <ButtonLink variant="secondary" href="/invoices">
+              All invoices
+            </ButtonLink>
+            <ButtonLink href={`/invoices/${invoice.id}/pdf`} prefetch={false} target="_blank" rel="noopener">
+              Download PDF
+            </ButtonLink>
+          </>
         }
       />
 

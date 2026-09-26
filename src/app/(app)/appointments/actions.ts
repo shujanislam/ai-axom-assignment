@@ -25,9 +25,11 @@ type Completed = {
 };
 
 /**
- * Marks the appointment and its job card COMPLETED, records the visit in the service history and
- * saves its invoice, all in one statement, then emails the invoice. The invoice is the job card's
- * estimate, or the static price list for appointments without a card. A failed email undoes nothing.
+ * Marks the appointment and its job card COMPLETED, records the visit in the service history,
+ * saves its invoice and posts it in the customer's chat with a request to rate the visit, all in
+ * one statement, then emails it.
+ * The invoice is the job card's estimate, or the static price list for appointments without a
+ * card. A failed email undoes nothing.
  */
 export async function completeAppointment(id: string): Promise<CompleteResult> {
   if (!(await getCurrentAdvisor())) throw new Error("Not signed in");
@@ -58,6 +60,26 @@ export async function completeAppointment(id: string): Promise<CompleteResult> {
       INSERT INTO invoices (appointment_id, cost)
       SELECT id, ${JSON.stringify(cost)}::jsonb FROM done
       RETURNING id, created_at
+    ), chat AS (
+      -- The invoice in the customer's chat; the message shows it as a PDF to download. Then the
+      -- request to rate the visit, a moment later so it always sorts after the invoice.
+      INSERT INTO messages (customer_id, sender, kind, body, appointment_id, invoice_id, created_at)
+      SELECT d.customer_id, 'ASSISTANT', 'INVOICE',
+        'Your **' || v.vehicle_number || '** is ready: **' || d.appointment_type
+          || '** is complete. Here is your invoice.',
+        d.id, i.id, now()
+      FROM done d
+      CROSS JOIN invoice i
+      JOIN vehicles v ON v.id = d.vehicle_id
+      UNION ALL
+      SELECT d.customer_id, 'ASSISTANT', 'FEEDBACK',
+        'How did we do with your **' || d.appointment_type || '**'
+          || COALESCE(' with ' || split_part(m.name, ' ', 1), '')
+          || '? Your rating helps us and your mechanic get better.',
+        d.id, NULL, now() + interval '1 millisecond'
+      FROM done d
+      LEFT JOIN job_cards j ON j.appointment_id = d.id AND j.status <> 'CANCELLED'
+      LEFT JOIN mechanics m ON m.id = j.mechanic_id
     )
     SELECT d.id, d.appointment_type, i.id AS invoice_id, i.created_at AS invoiced_at,
       c.name AS customer_name, c.email, v.vehicle_number, v.vehicle_type

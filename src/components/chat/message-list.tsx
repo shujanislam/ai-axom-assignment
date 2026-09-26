@@ -1,11 +1,15 @@
 import type React from "react";
 import { Streamdown } from "streamdown";
 import { SlotPicker } from "@/components/booking/slot-picker";
+import { ReceiptIcon } from "@/components/icons";
+import { FeedbackForm } from "@/components/chat/feedback-form";
 import { QuestionOptions } from "@/components/chat/question-options";
 import { SkipLink } from "@/components/chat/skip-link";
 import { humanize } from "@/lib/format";
 import { answerableQuestionId, assistantTyping, bookingState, chosenOptions, type ChatMessage } from "@/lib/chat/thread";
 import { formatSlot, type SlotDay } from "@/lib/booking/slots";
+import { formatRupees, invoiceNumber } from "@/lib/invoices/pricing";
+import { lapseLabel, reasonLabel } from "@/lib/retention/reasons";
 
 const TZ = "Asia/Kolkata";
 const GROUP_GAP_MS = 5 * 60_000; // consecutive messages from one sender within this gap share a group
@@ -26,8 +30,9 @@ function dayLabel(d: Date) {
 /**
  * One thread, shared by the customer's chat and the advisor inbox, drawn like a messenger:
  * the viewer's side on the right in green, the other side on the left in white, with day
- * separators and grouped runs. Booking pickers, question options and skip links are only
- * interactive when their actions are given (the customer's view); advisors also see verdicts.
+ * separators and grouped runs. Booking pickers, question options, skip links and ratings are only
+ * interactive when their actions are given (the customer's view); advisors also see verdicts and
+ * what the model read in a rating.
  */
 export function MessageList({
   thread,
@@ -37,6 +42,8 @@ export function MessageList({
   answer,
   skipQuestions,
   skipBooking,
+  rate,
+  reason,
 }: {
   thread: ChatMessage[];
   viewer: "CUSTOMER" | "ADVISOR";
@@ -46,6 +53,9 @@ export function MessageList({
   answer?: (messageId: string) => (option: string) => Promise<{ error?: string }>;
   skipQuestions?: (messageId: string) => () => Promise<{ error?: string }>;
   skipBooking?: (messageId: string) => () => Promise<{ error?: string }>;
+  rate?: (messageId: string) => (rating: number, comment: string) => Promise<{ error?: string }>;
+  /** Answers a REASON message ("what got in the way?"); open until answered, not only while newest. */
+  reason?: (messageId: string) => (label: string) => Promise<{ error?: string }>;
 }) {
   const answerable = answerableQuestionId(thread);
   const chosen = chosenOptions(thread);
@@ -72,7 +82,7 @@ export function MessageList({
           +new Date(m.created_at) - +new Date(prev.created_at) < GROUP_GAP_MS;
         const own = mine(m);
         const name = grouped ? null : author(m);
-        const wide = m.kind === "BOOKING" || m.kind === "QUESTION";
+        const wide = m.kind === "BOOKING" || m.kind === "QUESTION" || m.kind === "FEEDBACK" || m.kind === "REASON";
 
         return (
           <li key={m.id} className="flex flex-col">
@@ -113,6 +123,17 @@ export function MessageList({
                 {m.kind === "BOOKING" && (
                   <BookingBlock message={m} slots={slots?.(m) ?? []} book={book?.(m.id)} skip={skipBooking?.(m.id)} />
                 )}
+                {m.kind === "INVOICE" && m.invoice_id && (
+                  <InvoiceAttachment invoiceId={m.invoice_id} total={m.invoice_total} viewer={viewer} />
+                )}
+                {m.kind === "FEEDBACK" && <FeedbackForm rated={m.feedback} rate={rate?.(m.id)} />}
+                {m.kind === "REASON" && m.options && m.lapse && (
+                  <QuestionOptions
+                    options={m.options}
+                    chosen={reasonLabel(m.lapse.reason)}
+                    answer={m.lapse.reason ? undefined : reason?.(m.id)}
+                  />
+                )}
                 {m.kind === "QUESTION" && m.options && (
                   <QuestionOptions
                     options={m.options}
@@ -140,6 +161,23 @@ export function MessageList({
                 </Chip>
                 {m.verdict.fault && <Chip>Likely fault: {humanize(m.verdict.fault)}</Chip>}
                 {m.verdict.fixable && <Chip>Fix: {humanize(m.verdict.fixable)}</Chip>}
+              </span>
+            )}
+            {viewer === "ADVISOR" && m.lapse && (
+              <span className={`mt-1.5 flex flex-wrap gap-1.5 ${own ? "justify-end" : ""}`}>
+                <Chip>Retention: {lapseLabel[m.lapse.kind]}</Chip>
+                <Chip>{m.lapse.reason ? `Reason: ${reasonLabel(m.lapse.reason)}` : "No answer yet"}</Chip>
+              </span>
+            )}
+            {viewer === "ADVISOR" && m.feedback?.sentiment && (
+              <span className={`mt-1.5 flex flex-wrap gap-1.5 ${own ? "justify-end" : ""}`}>
+                <Chip>Feedback: {humanize(m.feedback.sentiment)}</Chip>
+                {m.feedback.topics.map((t) => (
+                  <Chip key={t.topic}>
+                    {humanize(t.topic)}: {humanize(t.sentiment)}
+                  </Chip>
+                ))}
+                {m.feedback.summary && <Chip>{m.feedback.summary}</Chip>}
               </span>
             )}
             {m.ai_status === "FAILED" && (
@@ -173,6 +211,38 @@ export function MessageList({
 
 function Chip({ children }: { children: React.ReactNode }) {
   return <span className="rounded-md bg-white/90 px-2 py-0.5 text-[11.5px] text-muted shadow-sm">{children}</span>;
+}
+
+/** The invoice PDF, like a file shared in a messenger. Each side downloads it from its own area. */
+function InvoiceAttachment({
+  invoiceId,
+  total,
+  viewer,
+}: {
+  invoiceId: string;
+  total: number | null;
+  viewer: "CUSTOMER" | "ADVISOR";
+}) {
+  const href = viewer === "CUSTOMER" ? `/chat/invoices/${invoiceId}` : `/invoices/${invoiceId}/pdf`;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener"
+      className="mt-2 flex items-center gap-3 rounded-lg bg-black/[0.04] px-3 py-2.5 transition-colors hover:bg-black/[0.07]"
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#c8453a] text-white">
+        <ReceiptIcon size={16} />
+      </span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate text-[13.5px] font-medium">{invoiceNumber(invoiceId)}.pdf</span>
+        <span className="block text-[12px] text-muted">
+          PDF{total !== null && ` · ${formatRupees(total)}`}
+        </span>
+      </span>
+      <span className="text-[12.5px] font-medium text-muted">Download</span>
+    </a>
+  );
 }
 
 function BookingBlock({

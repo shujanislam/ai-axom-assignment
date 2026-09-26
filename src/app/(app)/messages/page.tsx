@@ -32,7 +32,18 @@ function preview(c: Conversation) {
     .replace(/\s+/g, " ")
     .trim();
   const who = c.last_sender === "ASSISTANT" ? "Assistant: " : c.last_sender === "ADVISOR" ? "Advisor: " : "";
-  const what = c.last_kind === "QUESTION" ? "Question: " : c.last_kind === "BOOKING" ? "Booking: " : "";
+  const what =
+    c.last_kind === "QUESTION"
+      ? "Question: "
+      : c.last_kind === "BOOKING"
+        ? "Booking: "
+        : c.last_kind === "INVOICE"
+          ? "Invoice: "
+          : c.last_kind === "FEEDBACK"
+            ? "Feedback: "
+            : c.last_kind === "REASON"
+              ? "Check-in: "
+              : "";
   return `${who}${what}${text}`;
 }
 

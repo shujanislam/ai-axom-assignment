@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { sql } from "@/lib/db";
+import { bookableStatuses } from "@/lib/format";
 import { isOfferedSlot } from "@/lib/booking/slots";
 import { bookWithJobCard, insertJobCard } from "@/lib/job-cards/plan";
 
@@ -20,7 +21,7 @@ export async function bookSlot(appointmentId: string, slotIso: string): Promise<
   }
 
   const [appointment] = (await sql`
-    SELECT appointment_type FROM appointments WHERE id = ${appointmentId} AND status = 'DUE'`) as {
+    SELECT appointment_type FROM appointments WHERE id = ${appointmentId} AND status = ANY(${bookableStatuses})`) as {
     appointment_type: string;
   }[];
   if (!appointment) return { error: "This appointment can no longer be booked online." };
@@ -31,7 +32,7 @@ export async function bookSlot(appointmentId: string, slotIso: string): Promise<
     (plan) => sql`
       WITH appt AS (
         UPDATE appointments SET status = 'SCHEDULED', scheduled_at = ${slot.toISOString()}
-        WHERE id = ${appointmentId} AND status = 'DUE'
+        WHERE id = ${appointmentId} AND status = ANY(${bookableStatuses})
         RETURNING id, customer_id, vehicle_id
       ), card AS (${insertJobCard(plan)})
       SELECT id FROM appt`,

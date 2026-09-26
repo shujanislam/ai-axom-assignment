@@ -15,6 +15,7 @@ export const COMPLAINT_TYPES = [
 /** Triage asks at least one and at most this many multiple-choice questions per problem. */
 export const MAX_QUESTIONS = 5;
 export const OPTION_MAX = 80;
+export const FEEDBACK_COMMENT_MAX = 1000; // feedback.comment's CHECK
 export const FAULTS = ["WORKSHOP", "CUSTOMER", "WEAR", "UNCLEAR"] as const;
 export const FIXABLE = ["IN_HOUSE", "SPECIALIST", "DIY", "UNCLEAR"] as const;
 

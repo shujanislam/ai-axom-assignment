@@ -16,6 +16,12 @@ export const appointmentStatus: Record<string, { label: string; tone: Tone }> = 
   CANCELLED: { label: "Cancelled", tone: "idle" },
 };
 
+/**
+ * Appointments the customer can still book a slot for: due, and the lapses the retention job
+ * marks (a booking link left unanswered, a slot missed). Missing one doesn't close the offer.
+ */
+export const bookableStatuses = ["DUE", "NO_REPLY", "MISSED"];
+
 /** Appointments that can be marked done: the car is in, or booked to come in. */
 export const completableStatuses = ["CHECKED_IN", "SCHEDULED"];
 

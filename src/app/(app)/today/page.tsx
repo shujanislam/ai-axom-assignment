@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/icons";
-import { Card, PageHeader, Tag } from "@/components/ui";
+import { Card, PageHeader, SectionLabel, Tag } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
 import { getArrivals } from "@/lib/appointments/queries";
+import { getRecentLapses } from "@/lib/retention/owner";
+import { lapseLabel, reasonLabel } from "@/lib/retention/reasons";
 
 export const metadata: Metadata = { title: "Today · gear-ai" };
 
 export default async function TodayPage() {
-  const arrivals = await getArrivals();
+  const [arrivals, lapses] = await Promise.all([getArrivals(), getRecentLapses()]);
 
   return (
     <>
@@ -57,6 +59,51 @@ export default async function TodayPage() {
             </Link>
           ))}
         </div>
+      )}
+
+      <div className="mt-10">
+        <SectionLabel count={lapses.length}>Customers slipping away</SectionLabel>
+      </div>
+      {lapses.length === 0 ? (
+        <p className="mt-3 rounded-2xl bg-well px-5 py-4 text-[14px] text-muted">
+          Nobody has missed a slot, skipped a booking or let a service date pass in the last two weeks.
+        </p>
+      ) : (
+        <Card className="mt-3 px-6 py-2">
+          <ul>
+            {lapses.map((l) => (
+              <li key={l.id} className="border-b border-line last:border-0">
+                <Link
+                  href={`/messages?c=${l.customer_id}`}
+                  className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1.5 py-3.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-medium">
+                      {l.customer_name}
+                      <span className="ml-2 font-normal text-muted">
+                        {[l.vehicle_number, l.phone_number].filter(Boolean).join(" · ")}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-[12.5px] text-muted">
+                      {lapseLabel[l.kind]} · {l.service} · {formatDateTime(l.created_at)}
+                    </p>
+                  </div>
+                  {l.reason ? (
+                    <Tag
+                      className={l.reason === "UNHAPPY" || l.reason === "PRICE" ? "bg-amber-soft text-amber-ink" : ""}
+                    >
+                      {reasonLabel(l.reason)}
+                    </Tag>
+                  ) : (
+                    <span className="text-[12.5px] text-subtle">
+                      {l.asked ? "Asked, no answer yet" : "Not asked: already in touch"}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
     </>
   );
