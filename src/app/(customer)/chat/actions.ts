@@ -3,7 +3,13 @@
 import { refresh } from "next/cache";
 import { after } from "next/server";
 import { getCurrentCustomer } from "@/lib/server/auth";
-import { bookFromMessage, postCustomerMessage, respondToCustomer, type BookResult } from "@/lib/server/chat";
+import {
+  answerQuestion,
+  bookFromMessage,
+  postCustomerMessage,
+  respondToCustomer,
+  type BookResult,
+} from "@/lib/server/chat";
 import { isOfferedSlot } from "@/lib/server/slots";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,4 +42,17 @@ export async function bookFromChat(messageId: string, slotIso: string): Promise<
   const result = await bookFromMessage(customer.id, messageId, slot);
   refresh();
   return result;
+}
+
+/** Tapping an option answers the triage question; the assistant then asks the next one or decides. */
+export async function answerChatQuestion(messageId: string, option: string): Promise<{ error?: string }> {
+  const customer = await requireCustomer();
+  if (!UUID.test(messageId)) return { error: "Invalid question." };
+  if (!(await answerQuestion(customer.id, messageId, option))) {
+    refresh();
+    return { error: "This question was already answered." };
+  }
+  after(() => respondToCustomer(customer.id));
+  refresh();
+  return {};
 }

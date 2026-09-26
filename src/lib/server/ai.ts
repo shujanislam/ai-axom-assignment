@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 
 // NVIDIA's API is OpenAI-compatible, so the openai client just points at it.
-const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+// NVIDIA_BASE_URL can point elsewhere, e.g. at a local stub when testing.
+const NVIDIA_BASE_URL = process.env.NVIDIA_BASE_URL ?? "https://integrate.api.nvidia.com/v1";
 const DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 /** NVIDIA's free tier can stall for minutes; give up on a call rather than hang. */
 const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 120_000);

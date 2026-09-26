@@ -7,7 +7,7 @@ import { ScrollToEnd } from "@/components/chat/scroll-to-end";
 import { getCurrentCustomer } from "@/lib/server/auth";
 import { getThread } from "@/lib/server/chat";
 import { getFreeSlots, groupSlotsByDay } from "@/lib/server/slots";
-import { bookFromChat, sendMessage } from "./actions";
+import { answerChatQuestion, bookFromChat, sendMessage } from "./actions";
 
 export const metadata: Metadata = { title: "Messages · gear-ai" };
 
@@ -32,7 +32,13 @@ export default async function CustomerChatPage() {
             service you’d like to book.
           </p>
         ) : (
-          <MessageList thread={thread} viewer="CUSTOMER" slots={slots} book={(id) => bookFromChat.bind(null, id)} />
+          <MessageList
+            thread={thread}
+            viewer="CUSTOMER"
+            slots={slots}
+            book={(id) => bookFromChat.bind(null, id)}
+            answer={(id) => answerChatQuestion.bind(null, id)}
+          />
         )}
         <ScrollToEnd count={thread.length} />
       </div>

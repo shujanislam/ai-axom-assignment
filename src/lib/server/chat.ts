@@ -15,6 +15,14 @@ const COMPLAINT_TYPES = [
   "OTHER",
 ] as const;
 
+/** Triage asks at least one and at most this many multiple-choice questions per problem. */
+export const MAX_QUESTIONS = 5;
+const OPTION_MAX = 80;
+const FAULTS = ["WORKSHOP", "CUSTOMER", "WEAR", "UNCLEAR"] as const;
+const FIXABLE = ["IN_HOUSE", "SPECIALIST", "DIY", "UNCLEAR"] as const;
+
+const TRIAGE_FALLBACK_REPLY =
+  "Sorry, that took too long on our side. Please send your last answer again and we’ll carry on.";
 const FALLBACK_REPLY =
   "Sorry, I couldn’t process that just now. An advisor has your message and will reply here shortly.";
 
@@ -25,8 +33,12 @@ export type Sender = "CUSTOMER" | "ADVISOR" | "ASSISTANT";
 export type ChatMessage = {
   id: string;
   sender: Sender;
-  kind: "TEXT" | "BOOKING";
+  kind: "TEXT" | "BOOKING" | "QUESTION";
   body: string;
+  options: string[] | null;
+  triage_id: string | null;
+  /** Set on the message that concluded a triage: the verdict, for advisors. */
+  verdict: { status: string; fault: string | null; fixable: string | null } | null;
   created_at: Date;
   ai_status: string | null;
   advisor_name: string | null;
@@ -37,12 +49,16 @@ export type ChatMessage = {
 
 export async function getThread(customerId: string) {
   const rows = await sql`
-    SELECT m.id, m.sender, m.kind, m.body, m.created_at, m.ai_status, adv.name AS advisor_name,
-      a.status AS appointment_status, a.scheduled_at, r.advisor_action AS recommendation_action
+    SELECT m.id, m.sender, m.kind, m.body, m.options, m.triage_id, m.created_at, m.ai_status,
+      adv.name AS advisor_name, a.status AS appointment_status, a.scheduled_at,
+      r.advisor_action AS recommendation_action,
+      CASE WHEN t.id IS NOT NULL
+        THEN json_build_object('status', t.status, 'fault', t.fault, 'fixable', t.fixable) END AS verdict
     FROM messages m
     LEFT JOIN advisors adv ON adv.id = m.advisor_id
     LEFT JOIN appointments a ON a.id = m.appointment_id
     LEFT JOIN recommendations r ON r.id = m.recommendation_id
+    LEFT JOIN triages t ON t.concluded_message_id = m.id
     WHERE m.customer_id = ${customerId}
     ORDER BY m.created_at, m.id`;
   return rows as ChatMessage[];
@@ -54,6 +70,24 @@ export function bookingState(m: ChatMessage): { open: true } | { open: false; bo
   if (m.appointment_status === "DUE") return { open: true };
   if (m.appointment_status === null && m.recommendation_action === "PENDING") return { open: true };
   return { open: false, bookedAt: null };
+}
+
+/** A question can be answered only while it is the newest one and nothing came after it. */
+export function answerableQuestionId(thread: ChatMessage[]) {
+  const last = thread.at(-1);
+  return last?.kind === "QUESTION" ? last.id : null;
+}
+
+/** The option the customer picked for each question: their next message, if it is an option. */
+export function chosenOptions(thread: ChatMessage[]) {
+  const chosen = new Map<string, string>();
+  thread.forEach((m, i) => {
+    const next = thread[i + 1];
+    if (m.kind === "QUESTION" && next?.sender === "CUSTOMER" && m.options?.includes(next.body)) {
+      chosen.set(m.id, next.body);
+    }
+  });
+  return chosen;
 }
 
 /** True while the assistant is working on the customer's latest message. */
@@ -103,12 +137,40 @@ export async function postAdvisorMessage(customerId: string, advisorId: string, 
 async function postAssistantMessage(
   customerId: string,
   body: string,
-  extra: { kind?: "TEXT" | "BOOKING"; recommendationId?: string | null; appointmentId?: string | null } = {},
+  extra: {
+    kind?: ChatMessage["kind"];
+    recommendationId?: string | null;
+    appointmentId?: string | null;
+    triageId?: string | null;
+    options?: string[];
+  } = {},
 ) {
-  await sql`
-    INSERT INTO messages (customer_id, sender, kind, body, recommendation_id, appointment_id)
+  const [row] = (await sql`
+    INSERT INTO messages (customer_id, sender, kind, body, recommendation_id, appointment_id, triage_id, options)
     VALUES (${customerId}, 'ASSISTANT', ${extra.kind ?? "TEXT"}, ${body.slice(0, 4000)},
-      ${extra.recommendationId ?? null}, ${extra.appointmentId ?? null})`;
+      ${extra.recommendationId ?? null}, ${extra.appointmentId ?? null}, ${extra.triageId ?? null},
+      ${extra.options ? JSON.stringify(extra.options) : null}::jsonb)
+    RETURNING id`) as { id: string }[];
+  return row.id;
+}
+
+/**
+ * Posts the customer's pick as their reply, but only if the question is still the newest message
+ * and the option is really one of its options, checked in the same statement as the insert.
+ */
+export async function answerQuestion(customerId: string, messageId: string, option: string) {
+  const rows = await sql`
+    INSERT INTO messages (customer_id, sender, body, ai_status)
+    SELECT ${customerId}, 'CUSTOMER', ${option}, 'PENDING'
+    FROM messages q
+    WHERE q.id = ${messageId} AND q.customer_id = ${customerId} AND q.kind = 'QUESTION'
+      AND q.options ? ${option}
+      AND NOT EXISTS (
+        SELECT 1 FROM messages later
+        WHERE later.customer_id = q.customer_id AND (later.created_at, later.id) > (q.created_at, q.id)
+      )
+    RETURNING id`;
+  return rows.length > 0;
 }
 
 type NewRecommendation = { type: string; title: string; description: string | null; priority: Priority };
@@ -191,16 +253,20 @@ export async function bookFromMessage(customerId: string, messageId: string, slo
 
 // -------------------------------------------------------------- assistant
 
+type Vehicle = { id: string; vehicle_number: string; vehicle_type: string | null; fuel_type: string | null };
+type OpenTriage = { id: string; vehicle_id: string | null; summary: string; questions: number };
+
 type CustomerContext = {
   name: string;
-  vehicles: { id: string; vehicle_number: string; vehicle_type: string | null; fuel_type: string | null }[];
+  vehicles: Vehicle[];
   visits: { vehicle_number: string; service: string; date: string }[];
   open_appointments: { vehicle_number: string; type: string; status: string; scheduled_at: string | null }[];
   suggested: { vehicle_number: string; title: string; priority: string }[];
+  triage: OpenTriage | null;
 };
 
 async function getCustomerContext(customerId: string): Promise<CustomerContext> {
-  const [[customer], vehicles, visits, open, suggested] = await Promise.all([
+  const [[customer], vehicles, visits, open, suggested, [triage]] = await Promise.all([
     sql`SELECT name FROM customers WHERE id = ${customerId}`,
     sql`
       SELECT v.id, v.vehicle_number, v.vehicle_type, v.fuel_type FROM vehicles v
@@ -219,40 +285,65 @@ async function getCustomerContext(customerId: string): Promise<CustomerContext> 
     sql`
       SELECT v.vehicle_number, r.title, r.priority FROM recommendations r JOIN vehicles v ON v.id = r.vehicle_id
       WHERE r.customer_id = ${customerId} AND r.source IN ('FOLLOW_UP', 'CHAT') AND r.advisor_action = 'PENDING'`,
+    sql`
+      SELECT t.id, t.vehicle_id, t.summary,
+        (SELECT count(*)::int FROM messages m WHERE m.triage_id = t.id AND m.kind = 'QUESTION') AS questions
+      FROM triages t WHERE t.customer_id = ${customerId} AND t.status = 'OPEN'`,
   ]);
   return {
     name: (customer as { name: string }).name,
-    vehicles: vehicles as CustomerContext["vehicles"],
+    vehicles: vehicles as Vehicle[],
     visits: visits as CustomerContext["visits"],
     open_appointments: open as CustomerContext["open_appointments"],
     suggested: suggested as CustomerContext["suggested"],
+    triage: (triage as OpenTriage | undefined) ?? null,
   };
 }
 
 const SYSTEM_PROMPT = `You are the service assistant of a car workshop in India, chatting with a customer.
-You get the customer's vehicles, recent visits, open appointments, services the workshop already
-suggested, and the conversation so far. Answer the customer's latest message.
+You get the customer's vehicles, recent visits, open appointments, services already suggested, any
+problem currently being triaged, and the conversation so far. Answer the customer's latest message.
 
-Reply with JSON only, no prose, exactly: {"reply":"...","issue":null,"booking":null}
+Reply with JSON only, no prose, exactly:
+{"reply":"...","problem":null,"question":null,"assessment":null,"booking":null}
 
-- "reply": what you say to the customer, in short, friendly Markdown (under 120 words; bold and
-  bullet lists are fine, no tables, no code, no headings). Use the customer's language.
-- "issue": when the customer reports a problem with a vehicle or a complaint about the workshop, set
-  {"vehicle_number":"...","complaint_type":"${COMPLAINT_TYPES.join("|")}",
-   "recommendation_type":"${recommendationTypes.join("|")}","title":"service to book, max 60 chars",
-   "description":"one sentence for the advisor","priority":"${priorities.join("|")}"}
-  and tell the customer an advisor will review it. Otherwise null.
-- "booking": only when the customer clearly wants to book or bring the vehicle in, set
-  {"vehicle_number":"...","service":"service to book, max 60 chars"} and tell them to pick a slot
-  below. Otherwise null.
-- vehicle_number must be one of the customer's vehicles. If it is unclear which one, ask, and set
-  issue/booking to null.
+- "reply": what you say to the customer, short and friendly Markdown (under 100 words; bold and
+  bullet lists are fine; no tables, code or headings). Use the customer's language.
+
+TRIAGE. When the customer reports a problem with a vehicle, or a complaint about the workshop, do
+not jump to an appointment. Find out what is going on with multiple-choice questions first:
+- "problem": {"vehicle_number":"...","summary":"one line"} when a NEW problem is reported and no
+  triage is open. Always ask the first question in the same reply.
+- "question": {"text":"...","options":["...","..."]}. One question per reply, 2-5 short options,
+  add "Not sure" when it helps. Ask what tells you: where it comes from and when it happens, how
+  bad it is and whether it's getting worse, whether it started after our last service (our fault?)
+  or from use, wear or an accident (theirs?), and whether it needs the workshop at all.
+- Ask at least 1 and at most ${MAX_QUESTIONS} questions per problem. Stop as soon as you are sure.
+- "assessment": once you are sure (at the latest after question ${MAX_QUESTIONS} is answered):
+  {"vehicle_number":"...","outcome":"CONSULT|APPOINTMENT","fault":"${FAULTS.join("|")}","fixable":"${FIXABLE.join("|")}",
+   "complaint_type":"${COMPLAINT_TYPES.join("|")}","recommendation_type":"${recommendationTypes.join("|")}",
+   "title":"service to book, max 60 chars","description":"one sentence for the advisor",
+   "priority":"${priorities.join("|")}"}
+  CONSULT when it's normal behaviour, minor, or advice is enough: put the advice in "reply".
+  APPOINTMENT when it needs the workshop, or anything safety-related (brakes, steering, tyres,
+  suspension, warning lights, leaks, smoke) unless clearly harmless: tell them to pick a slot below.
+  Never set "question" and "assessment" together.
+
+BOOKING. "booking": {"vehicle_number":"...","service":"max 60 chars"} only when the customer clearly
+asks to book a service that is not the problem being triaged. Otherwise null.
+
+- vehicle_number must be one of the customer's vehicles; if unclear, ask which one first.
 - Never quote prices, promise a diagnosis, or invent dates or times: the app shows free slots.`;
 
 type AssistantTurn = {
   reply?: string;
-  issue?: {
+  problem?: { vehicle_number?: string; summary?: string } | null;
+  question?: { text?: string; options?: unknown } | null;
+  assessment?: {
     vehicle_number?: string;
+    outcome?: string;
+    fault?: string;
+    fixable?: string;
     complaint_type?: string;
     recommendation_type?: string;
     title?: string;
@@ -265,38 +356,124 @@ type AssistantTurn = {
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T =>
   allowed.includes(value as T) ? (value as T) : fallback;
 
-async function applyTurn(customerId: string, ctx: CustomerContext, turn: AssistantTurn) {
-  const byPlate = new Map(ctx.vehicles.map((v) => [v.vehicle_number, v]));
-  // Trust the model's plate only if it's one of this customer's; a single vehicle is unambiguous.
-  const vehicleFor = (plate?: string) =>
-    byPlate.get(plate ?? "") ?? (ctx.vehicles.length === 1 ? ctx.vehicles[0] : undefined);
+const text = (value: unknown, max: number) =>
+  String(value ?? "")
+    .trim()
+    .slice(0, max);
+
+/** 2-5 distinct, non-empty options, or null if the model's list can't be salvaged. */
+function cleanOptions(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const options = [...new Set(value.map((o) => text(o, OPTION_MAX)).filter(Boolean))].slice(0, MAX_QUESTIONS);
+  return options.length >= 2 ? options : null;
+}
+
+async function openTriage(customerId: string, vehicleId: string | null, summary: string): Promise<OpenTriage> {
+  // triages_one_open_idx allows one open triage per customer; a concurrent run may have won.
+  const [row] = (await sql`
+    WITH inserted AS (
+      INSERT INTO triages (customer_id, vehicle_id, summary)
+      VALUES (${customerId}, ${vehicleId}, ${summary})
+      ON CONFLICT (customer_id) WHERE status = 'OPEN' DO NOTHING
+      RETURNING id, vehicle_id, summary
+    )
+    SELECT id, vehicle_id, summary FROM inserted
+    UNION ALL
+    SELECT id, vehicle_id, summary FROM triages WHERE customer_id = ${customerId} AND status = 'OPEN'
+    LIMIT 1`) as Omit<OpenTriage, "questions">[];
+  return { ...row, questions: 0 };
+}
+
+type Assessment = NonNullable<AssistantTurn["assessment"]>;
+
+/**
+ * Closes the triage. Every problem is logged as a complaint; only APPOINTMENT raises a
+ * recommendation (shown on /service-due) and offers slots.
+ */
+async function concludeTriage(customerId: string, triage: OpenTriage, vehicle: Vehicle, a: Assessment, reply: string) {
+  const outcome = a.outcome === "CONSULT" ? "CONSULT" : "APPOINTMENT";
+  const fault = oneOf(a.fault, FAULTS, "UNCLEAR");
+  const fixable = oneOf(a.fixable, FIXABLE, "UNCLEAR");
+  const title = text(a.title, TITLE_MAX) || `Inspection: ${text(triage.summary, TITLE_MAX - 12)}`;
+
+  await sql`
+    INSERT INTO complaints (customer_id, vehicle_id, complaint_type)
+    VALUES (${customerId}, ${vehicle.id}, ${oneOf(a.complaint_type, COMPLAINT_TYPES, "OTHER")}::complaint_type)`;
 
   let recommendationId: string | null = null;
-  const issue = turn.issue;
-  const issueVehicle = issue ? vehicleFor(issue.vehicle_number) : undefined;
-  const issueTitle = String(issue?.title ?? "")
-    .trim()
-    .slice(0, TITLE_MAX);
-  if (issue && issueVehicle && issueTitle) {
-    await sql`
-      INSERT INTO complaints (customer_id, vehicle_id, complaint_type)
-      VALUES (${customerId}, ${issueVehicle.id}, ${oneOf(issue.complaint_type, COMPLAINT_TYPES, "OTHER")}::complaint_type)`;
-    recommendationId = await ensureRecommendation(customerId, issueVehicle.id, {
-      type: oneOf(issue.recommendation_type, recommendationTypes, "INSPECTION"),
-      title: issueTitle,
-      description: String(issue.description ?? "").trim() || null,
-      priority: oneOf(issue.priority, priorities, "MEDIUM"),
+  if (outcome === "APPOINTMENT") {
+    const note = `Chat triage: ${triage.summary}. Likely fault: ${fault.toLowerCase()}; fix: ${fixable.toLowerCase().replace("_", "-")}.`;
+    recommendationId = await ensureRecommendation(customerId, vehicle.id, {
+      type: oneOf(a.recommendation_type, recommendationTypes, "INSPECTION"),
+      title,
+      description: [text(a.description, 500), note].filter(Boolean).join(" "),
+      priority: oneOf(a.priority, priorities, "MEDIUM"),
     });
   }
 
-  await postAssistantMessage(customerId, String(turn.reply ?? "").trim() || FALLBACK_REPLY, { recommendationId });
+  const messageId = await postAssistantMessage(customerId, reply, { triageId: triage.id, recommendationId });
+  await sql`
+    UPDATE triages SET status = ${outcome}, fault = ${fault}, fixable = ${fixable}, vehicle_id = ${vehicle.id},
+      recommendation_id = ${recommendationId}, concluded_message_id = ${messageId}, closed_at = clock_timestamp()
+    WHERE id = ${triage.id} AND status = 'OPEN'`;
+
+  if (recommendationId) {
+    await postAssistantMessage(customerId, `Pick a time for **${title}** on ${vehicle.vehicle_number}:`, {
+      kind: "BOOKING",
+      recommendationId,
+      triageId: triage.id,
+    });
+  }
+}
+
+async function applyTurn(customerId: string, ctx: CustomerContext, turn: AssistantTurn) {
+  const byPlate = new Map(ctx.vehicles.map((v) => [v.vehicle_number, v]));
+  const byId = new Map(ctx.vehicles.map((v) => [v.id, v]));
+  // Trust the model's plate only if it's one of this customer's; a single vehicle is unambiguous.
+  const vehicleFor = (plate?: string) =>
+    byPlate.get(plate ?? "") ?? (ctx.vehicles.length === 1 ? ctx.vehicles[0] : undefined);
+  const reply = text(turn.reply, 4000) || FALLBACK_REPLY;
+
+  let triage = ctx.triage;
+  if (!triage && turn.problem) {
+    const summary = text(turn.problem.summary, 300) || "Problem reported in chat";
+    triage = await openTriage(customerId, vehicleFor(turn.problem.vehicle_number)?.id ?? null, summary);
+  }
+
+  if (triage) {
+    const vehicle =
+      vehicleFor(turn.assessment?.vehicle_number) ?? (triage.vehicle_id ? byId.get(triage.vehicle_id) : undefined);
+    const options = cleanOptions(turn.question?.options);
+    const question = text(turn.question?.text, 500);
+    const limitReached = triage.questions >= MAX_QUESTIONS;
+
+    // At least one question before a verdict, and a verdict needs a known vehicle.
+    if (turn.assessment && triage.questions >= 1 && vehicle) {
+      return concludeTriage(customerId, triage, vehicle, turn.assessment, reply);
+    }
+    if (limitReached && vehicle) {
+      // Five answers and still no verdict: let the workshop look rather than ask a sixth question.
+      return concludeTriage(
+        customerId,
+        triage,
+        vehicle,
+        { outcome: "APPOINTMENT", priority: "MEDIUM" },
+        `${reply}\n\nThanks for the details. The best next step is for our team to take a look.`,
+      );
+    }
+
+    await postAssistantMessage(customerId, reply, { triageId: triage.id });
+    if (question && options && !limitReached) {
+      await postAssistantMessage(customerId, question, { kind: "QUESTION", options, triageId: triage.id });
+    }
+    return;
+  }
+
+  await postAssistantMessage(customerId, reply);
 
   const booking = turn.booking;
   const bookingVehicle = booking ? vehicleFor(booking.vehicle_number) : undefined;
-  // Booking the problem just reported: reuse its recommendation, whatever the model called the
-  // service, so one problem never leaves a second recommendation pending on /service-due.
-  const sameProblem = recommendationId !== null && bookingVehicle?.id === issueVehicle?.id;
-  const service = (sameProblem ? issueTitle : String(booking?.service ?? "").trim()).slice(0, TITLE_MAX);
+  const service = text(booking?.service, TITLE_MAX);
   if (!booking || !bookingVehicle || !service) return;
 
   // Book the existing DUE appointment for this service if there is one, rather than a second.
@@ -307,16 +484,14 @@ async function applyTurn(customerId: string, ctx: CustomerContext, turn: Assista
     LIMIT 1`) as { id: string }[];
   const target = due
     ? { appointmentId: due.id }
-    : sameProblem
-      ? { recommendationId }
-      : {
-          recommendationId: await ensureRecommendation(customerId, bookingVehicle.id, {
-            type: "SERVICE",
-            title: service,
-            description: "The customer asked to book this in chat.",
-            priority: "MEDIUM",
-          }),
-        };
+    : {
+        recommendationId: await ensureRecommendation(customerId, bookingVehicle.id, {
+          type: "SERVICE",
+          title: service,
+          description: "The customer asked to book this in chat.",
+          priority: "MEDIUM",
+        }),
+      };
   await postAssistantMessage(customerId, `Pick a time for **${service}** on ${bookingVehicle.vehicle_number}:`, {
     kind: "BOOKING",
     ...target,
@@ -342,11 +517,19 @@ export async function respondToCustomer(customerId: string) {
     const [ctx, thread] = await Promise.all([getCustomerContext(customerId), getThread(customerId)]);
     const transcript = thread
       .slice(-HISTORY)
-      .map(
-        (m) => `${m.sender === "CUSTOMER" ? "Customer" : m.sender === "ADVISOR" ? "Advisor" : "Assistant"}: ${m.body}`,
-      )
+      .map((m) => {
+        const who = m.sender === "CUSTOMER" ? "Customer" : m.sender === "ADVISOR" ? "Advisor" : "Assistant";
+        return m.kind === "QUESTION"
+          ? `${who} (question): ${m.body} [options: ${m.options?.join(" | ")}]`
+          : `${who}: ${m.body}`;
+      })
       .join("\n");
-    const { name, ...facts } = ctx;
+    const { name, triage, ...facts } = ctx;
+    const triageLine = triage
+      ? `Problem being triaged: ${triage.summary} (questions asked: ${triage.questions} of at most ${MAX_QUESTIONS}${
+          triage.questions >= MAX_QUESTIONS ? "; give your assessment now" : ""
+        }).`
+      : "No problem is being triaged.";
 
     const completion = await client.chat.completions.create({
       model: aiModel(),
@@ -365,6 +548,7 @@ export async function respondToCustomer(customerId: string) {
                 fuel_type: v.fuel_type,
               })),
             })}`,
+            triageLine,
             `Conversation so far:\n${transcript}`,
           ].join("\n\n"),
         },
@@ -376,6 +560,10 @@ export async function respondToCustomer(customerId: string) {
   } catch (error) {
     console.error(`[chat] reply to ${customerId} failed after ${Date.now() - started}ms:`, error);
     await sql`UPDATE messages SET ai_status = 'FAILED' WHERE id = ANY(${claimed.map((m) => m.id)})`;
-    await postAssistantMessage(customerId, FALLBACK_REPLY);
+    // Mid-triage nothing is lost: the questions so far are kept, so ask for the answer again.
+    const [open] = await sql`SELECT id FROM triages WHERE customer_id = ${customerId} AND status = 'OPEN'`;
+    await postAssistantMessage(customerId, open ? TRIAGE_FALLBACK_REPLY : FALLBACK_REPLY, {
+      triageId: (open as { id: string } | undefined)?.id ?? null,
+    });
   }
 }

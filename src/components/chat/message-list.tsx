@@ -1,6 +1,15 @@
 import { Streamdown } from "streamdown";
 import { SlotPicker } from "@/components/slot-picker";
-import { assistantTyping, bookingState, type ChatMessage } from "@/lib/server/chat";
+import { QuestionOptions } from "@/components/chat/question-options";
+import { Tag } from "@/components/ui";
+import { humanize } from "@/lib/format";
+import {
+  answerableQuestionId,
+  assistantTyping,
+  bookingState,
+  chosenOptions,
+  type ChatMessage,
+} from "@/lib/server/chat";
 import { formatSlot, type SlotDay } from "@/lib/server/slots";
 
 const time = (d: Date) =>
@@ -14,19 +23,24 @@ const time = (d: Date) =>
 
 /**
  * One thread, shared by the customer's chat and the advisor inbox. `viewer` decides which side
- * is "mine". Booking pickers are only interactive when `book` is given (the customer's view).
+ * is "mine". Booking pickers and question options are only interactive when `book` / `answer`
+ * are given (the customer's view); advisors also see each triage's verdict.
  */
 export function MessageList({
   thread,
   viewer,
   slots,
   book,
+  answer,
 }: {
   thread: ChatMessage[];
   viewer: "CUSTOMER" | "ADVISOR";
   slots: SlotDay[];
   book?: (messageId: string) => (slotIso: string) => Promise<{ error?: string }>;
+  answer?: (messageId: string) => (option: string) => Promise<{ error?: string }>;
 }) {
+  const answerable = answerableQuestionId(thread);
+  const chosen = chosenOptions(thread);
   const mine = (m: ChatMessage) => (viewer === "CUSTOMER" ? m.sender === "CUSTOMER" : m.sender !== "CUSTOMER");
 
   return (
@@ -60,7 +74,21 @@ export function MessageList({
                 </Streamdown>
               )}
               {m.kind === "BOOKING" && <BookingBlock message={m} slots={slots} book={book?.(m.id)} />}
+              {m.kind === "QUESTION" && m.options && (
+                <QuestionOptions
+                  options={m.options}
+                  chosen={chosen.get(m.id) ?? null}
+                  answer={m.id === answerable ? answer?.(m.id) : undefined}
+                />
+              )}
             </div>
+            {viewer === "ADVISOR" && m.verdict && (
+              <span className="mt-1.5 flex flex-wrap gap-1.5 px-1">
+                <Tag>{m.verdict.status === "CONSULT" ? "Triage: consultation only" : "Triage: needs appointment"}</Tag>
+                {m.verdict.fault && <Tag>Likely fault: {humanize(m.verdict.fault)}</Tag>}
+                {m.verdict.fixable && <Tag>Fix: {humanize(m.verdict.fixable)}</Tag>}
+              </span>
+            )}
             {m.ai_status === "FAILED" && (
               <span className="mt-1 px-1 text-[11.5px] text-amber">The assistant couldn’t answer this one.</span>
             )}
