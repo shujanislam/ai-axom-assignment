@@ -23,10 +23,10 @@ async function appUrl() {
   return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
 }
 
-export type ReevaluateResult = { ok: true; added: number; aiQueued: boolean } | { ok: false };
+export type ReevaluateResult = { ok: true; added: number; dueSoon: number; aiQueued: boolean } | { ok: false };
 
 /**
- * Adds interval-based follow-ups right away, then lets the model review visit notes after the
+ * Adds follow-ups right away (next service dates coming up, plus interval rules), then lets the model review visit notes after the
  * response is sent. Its findings show up on the next page load.
  */
 export async function reevaluateServiceDue(): Promise<ReevaluateResult> {
@@ -36,7 +36,7 @@ export async function reevaluateServiceDue(): Promise<ReevaluateResult> {
   const aiQueued = Boolean(process.env.NVIDIA_API_KEY);
   if (aiQueued) after(() => runAiPass(rules));
   refresh();
-  return { ok: true, added: rules.created.length, aiQueued };
+  return { ok: true, added: rules.created.length, dueSoon: rules.dueSoon, aiQueued };
 }
 
 export type ApproveResult = { customer: string; emailed: true } | { customer: string; emailed: false; reason: string };

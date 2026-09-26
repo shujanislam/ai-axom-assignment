@@ -18,11 +18,16 @@ type VehicleContext = {
   completed_visits: { service: string; date: string }[];
   open_appointments: { type: string; status: string; since: string }[];
   pending_follow_ups: string[];
+  /** From the vehicle's latest services record; null when that visit set no next date. */
+  next_due: { service: string; visit: string; date: string } | null;
 };
 
 type Candidate = {
   customer_id: string;
   vehicle_id: string;
+  vehicle_number?: string;
+  /** Where the suggestion came from; next_due ones are counted separately for the button. */
+  origin?: "next_due";
   recommendation_type: string;
   title: string;
   description: string | null;
@@ -55,7 +60,10 @@ async function getVehicleContext() {
       COALESCE((
         SELECT json_agg(r.title) FROM recommendations r
         WHERE r.vehicle_id = v.id AND r.source IN ('FOLLOW_UP', 'CHAT') AND r.advisor_action = 'PENDING'
-      ), '[]') AS pending_follow_ups
+      ), '[]') AS pending_follow_ups,
+      (SELECT CASE WHEN s.next_appointment_date IS NOT NULL THEN json_build_object(
+          'service', s.service_type, 'visit', s.created_at::date, 'date', s.next_appointment_date) END
+        FROM services s WHERE s.vehicle_id = v.id ORDER BY s.created_at DESC LIMIT 1) AS next_due
     FROM vehicles v
     JOIN LATERAL (
       SELECT customer_id FROM visits x WHERE x.vehicle_id = v.id ORDER BY x.created_at DESC LIMIT 1
@@ -126,13 +134,64 @@ function alreadyPlanned(v: VehicleContext) {
   );
 }
 
+/** Vehicles whose next service date (set at the last visit) is this close, or already past, come back. */
+const NEXT_DUE_WINDOW_DAYS = 30;
+
+function daysBetween(from: string, to: string) {
+  return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+}
+
+function nextDuePriority(daysLeft: number): Priority {
+  if (daysLeft < -30) return "URGENT";
+  if (daysLeft < 0) return "HIGH";
+  if (daysLeft <= 7) return "MEDIUM";
+  return "LOW";
+}
+
+/** Follow-ups from services.next_appointment_date: the date the workshop set at the last visit. */
+function evaluateNextDue(vehicles: VehicleContext[], today: string): Candidate[] {
+  return vehicles.flatMap((v) => {
+    if (!v.next_due) return [];
+    const daysLeft = daysBetween(today, v.next_due.date);
+    if (daysLeft > NEXT_DUE_WINDOW_DAYS) return [];
+
+    const name = v.next_due.service.split("·")[0].trim();
+    const rule = ruleFor(name);
+    const title = (rule?.title ?? name) || "Periodic service";
+    if (alreadyPlanned(v).has(title.toLowerCase())) return [];
+
+    const when =
+      daysLeft > 1
+        ? `in ${daysLeft} days`
+        : daysLeft === 1
+          ? "tomorrow"
+          : daysLeft === 0
+            ? "today"
+            : `${-daysLeft} day${daysLeft === -1 ? "" : "s"} ago`;
+    return [
+      {
+        customer_id: v.customer_id,
+        vehicle_id: v.vehicle_id,
+        vehicle_number: v.vehicle_number,
+        recommendation_type: rule?.type ?? "SERVICE",
+        title: title.slice(0, TITLE_MAX),
+        description: `Next service was set for ${formatDate(v.next_due.date)} (${when}) at the visit on ${formatDate(v.next_due.visit)}.`,
+        priority: nextDuePriority(daysLeft),
+        origin: "next_due" as const,
+      },
+    ];
+  });
+}
+
 /** Interval-based follow-ups, worked out in code: instant and deterministic. */
 function evaluateRules(vehicles: VehicleContext[], today: string): Candidate[] {
   return vehicles.flatMap((v) => {
     const planned = alreadyPlanned(v);
+    // A next date set at the last visit is the workshop's own plan; it replaces the rule of thumb.
+    const plannedByDate = v.next_due ? ruleFor(v.next_due.service) : undefined;
     return SERVICE_RULES.flatMap((rule) => {
       const last = v.completed_visits.find((visit) => ruleFor(visit.service) === rule); // newest first
-      if (!last || planned.has(rule.title.toLowerCase())) return [];
+      if (!last || rule === plannedByDate || planned.has(rule.title.toLowerCase())) return [];
 
       const months = monthsBetween(last.date, today);
       if (months < rule.months - 1) return [];
@@ -268,18 +327,37 @@ async function evaluateNotes(vehicles: VehicleContext[], justAdded: Candidate[],
 
 // ------------------------------------------------------------------ runs
 
-export type RulePass = { created: NewFollowUp[]; vehicles: VehicleContext[]; candidates: Candidate[] };
+export type RulePass = {
+  created: NewFollowUp[];
+  /** Of `created`, how many came from a next service date coming up (or passed). */
+  dueSoon: number;
+  vehicles: VehicleContext[];
+  candidates: Candidate[];
+};
 
-/** Instant pass: interval rules only. Returns null if it failed. */
+/** Instant pass: next service dates, then interval rules. Returns null if it failed. */
 export async function runRulePass(): Promise<RulePass | null> {
   const started = Date.now();
   try {
     const vehicles = await getVehicleContext();
-    const candidates = evaluateRules(vehicles, todayInIndia());
+    const today = todayInIndia();
+    // Next dates first, so if both suggest the same service the dated one (with its reason) wins.
+    const seen = new Set<string>();
+    const candidates = [...evaluateNextDue(vehicles, today), ...evaluateRules(vehicles, today)].filter((c) => {
+      const key = `${c.vehicle_id}|${c.title.toLowerCase()}`;
+      return !seen.has(key) && seen.add(key);
+    });
     const created = await insertFollowUps(candidates);
-    console.log(`[follow-ups] rules: ${created.length} added in ${Date.now() - started}ms`);
+
+    const dated = new Set(
+      candidates.filter((c) => c.origin === "next_due").map((c) => `${c.vehicle_number}|${c.title}`),
+    );
+    const dueSoon = created.filter((c) => dated.has(`${c.vehicle_number}|${c.title}`)).length;
+    console.log(
+      `[follow-ups] rules: ${created.length} added (${dueSoon} from next service dates) in ${Date.now() - started}ms`,
+    );
     if (created.length) console.table(created);
-    return { created, vehicles, candidates };
+    return { created, dueSoon, vehicles, candidates };
   } catch (error) {
     console.error("[follow-ups] rule pass failed:", error);
     return null;

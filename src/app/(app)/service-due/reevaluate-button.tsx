@@ -15,7 +15,13 @@ export function ReevaluateButton() {
       ? "Re-evaluate"
       : !result.ok
         ? "Failed, retry"
-        : `${result.added === 0 ? "Nothing new" : `${result.added} added`}${result.aiQueued ? " · AI checking notes" : ""}`;
+        : [
+            result.added === 0 ? "Nothing new" : `${result.added} added`,
+            result.dueSoon > 0 && `${result.dueSoon} due soon`,
+            result.aiQueued && "AI checking notes",
+          ]
+            .filter(Boolean)
+            .join(" · ");
 
   return (
     <Button
