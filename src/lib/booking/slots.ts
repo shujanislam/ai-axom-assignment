@@ -1,4 +1,4 @@
-import { sql } from "./db";
+import { sql } from "@/lib/db";
 
 // Workshop hours, in India time. One car per slot (enforced by a unique index on scheduled_at).
 export const WORKSHOP_TZ = "Asia/Kolkata";

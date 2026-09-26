@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { logout } from "@/app/(auth)/login/actions";
 import { SparkIcon } from "@/components/icons";
-import { getCurrentCustomer } from "@/lib/server/auth";
+import { getCurrentCustomer } from "@/lib/auth/accounts";
 
 export default async function CustomerLayout({ children }: { children: ReactNode }) {
   const customer = await getCurrentCustomer();

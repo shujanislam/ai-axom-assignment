@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ButtonLink, Card, PageHeader, Row, SectionLabel } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
-import { formatRupees, invoiceNumber } from "@/lib/invoice";
-import { getInvoice } from "@/lib/server/queries";
+import { formatRupees, invoiceNumber } from "@/lib/invoices/pricing";
+import { getInvoice } from "@/lib/invoices/queries";
 
 export const metadata: Metadata = { title: "Invoice · gear-ai" };
 

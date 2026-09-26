@@ -1,8 +1,8 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { getCurrentAdvisor } from "@/lib/server/auth";
-import { sql } from "@/lib/server/db";
+import { getCurrentAdvisor } from "@/lib/auth/accounts";
+import { sql } from "@/lib/db";
 import { priorities, recommendationTypes, type AdvisorAction } from "@/lib/format";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

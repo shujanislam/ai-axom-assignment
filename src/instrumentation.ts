@@ -2,6 +2,6 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { scheduleFollowUpCron } = await import("./lib/server/cron");
+  const { scheduleFollowUpCron } = await import("./lib/follow-ups/cron");
   scheduleFollowUpCron();
 }

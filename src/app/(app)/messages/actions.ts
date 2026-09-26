@@ -1,8 +1,8 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { getCurrentAdvisor } from "@/lib/server/auth";
-import { postAdvisorMessage } from "@/lib/server/chat";
+import { getCurrentAdvisor } from "@/lib/auth/accounts";
+import { postAdvisorMessage } from "@/lib/chat/messages";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

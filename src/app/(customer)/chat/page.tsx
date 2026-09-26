@@ -4,9 +4,9 @@ import { AutoRefresh } from "@/components/chat/auto-refresh";
 import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { ScrollToEnd } from "@/components/chat/scroll-to-end";
-import { getCurrentCustomer } from "@/lib/server/auth";
-import { getThread } from "@/lib/server/chat";
-import { getFreeSlots, groupSlotsByDay } from "@/lib/server/slots";
+import { getCurrentCustomer } from "@/lib/auth/accounts";
+import { getThread } from "@/lib/chat/thread";
+import { getFreeSlots, groupSlotsByDay } from "@/lib/booking/slots";
 import { answerChatQuestion, bookFromChat, sendMessage, skipChatBooking, skipChatQuestions } from "./actions";
 
 export const metadata: Metadata = { title: "Messages · gear-ai" };

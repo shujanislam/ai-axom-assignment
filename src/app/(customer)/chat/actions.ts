@@ -2,17 +2,10 @@
 
 import { refresh } from "next/cache";
 import { after } from "next/server";
-import { getCurrentCustomer } from "@/lib/server/auth";
-import {
-  answerQuestion,
-  bookFromMessage,
-  postCustomerMessage,
-  respondToCustomer,
-  skipBooking,
-  skipTriage,
-  type BookResult,
-} from "@/lib/server/chat";
-import { isOfferedSlot } from "@/lib/server/slots";
+import { getCurrentCustomer } from "@/lib/auth/accounts";
+import { answerQuestion, bookFromMessage, postCustomerMessage, skipBooking, skipTriage, type BookResult } from "@/lib/chat/messages";
+import { respondToCustomer } from "@/lib/chat/assistant";
+import { isOfferedSlot } from "@/lib/booking/slots";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

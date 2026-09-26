@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Card, Tag } from "@/components/ui";
 import { formatDate } from "@/lib/format";
-import { getAcceptanceStats, getRecommendations, getServiceHistory, getVehicle } from "@/lib/server/queries";
+import { getAcceptanceStats, getRecommendations } from "@/lib/job-cards/queries";
+import { getServiceHistory, getVehicle } from "@/lib/vehicles/queries";
 import { AddObservation, SuggestionList } from "./suggestion-list";
 
 export const metadata: Metadata = { title: "Suggestions · gear-ai" };

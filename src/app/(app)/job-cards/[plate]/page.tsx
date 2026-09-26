@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { CalendarIcon, ChatIcon, CheckIcon, ListIcon, SparkIcon } from "@/components/icons";
 import { ButtonLink, Card, PageHeader, Row, SectionLabel } from "@/components/ui";
 import { actionLabel, formatDate, formatDateTime, humanize, onJobCard } from "@/lib/format";
-import { getComplaints, getRecommendations, getServiceHistory, getVehicle } from "@/lib/server/queries";
+import { getComplaints, getServiceHistory, getVehicle } from "@/lib/vehicles/queries";
+import { getRecommendations } from "@/lib/job-cards/queries";
 import { JobCardActions } from "./job-card-actions";
 
 export async function generateMetadata({ params }: PageProps<"/job-cards/[plate]">): Promise<Metadata> {

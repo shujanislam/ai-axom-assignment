@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { HOME, readSessionToken, SESSION_COOKIE } from "@/lib/session";
+import { HOME, readSessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 
 const BOOKING_PATH = /^\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isCustomerArea = (path: string) => path === "/chat" || path.startsWith("/chat/");

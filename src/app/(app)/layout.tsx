@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { humanize } from "@/lib/format";
-import { getCurrentAdvisor } from "@/lib/server/auth";
+import { getCurrentAdvisor } from "@/lib/auth/accounts";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const advisor = await getCurrentAdvisor();

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, PageHeader, Tag } from "@/components/ui";
 import { formatDate } from "@/lib/format";
-import { getJobCards } from "@/lib/server/queries";
+import { getJobCards } from "@/lib/job-cards/queries";
 
 export const metadata: Metadata = { title: "Job cards · gear-ai" };
 

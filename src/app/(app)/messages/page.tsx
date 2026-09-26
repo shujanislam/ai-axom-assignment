@@ -6,7 +6,7 @@ import { MessageList } from "@/components/chat/message-list";
 import { ScrollToEnd } from "@/components/chat/scroll-to-end";
 import { ArrowLeftIcon } from "@/components/icons";
 import { initials } from "@/lib/format";
-import { getConversations, getThread, type Conversation } from "@/lib/server/chat";
+import { getConversations, getThread, type Conversation } from "@/lib/chat/thread";
 import { replyToCustomer } from "./actions";
 import { ConversationList, type ConversationItem } from "./conversation-list";
 

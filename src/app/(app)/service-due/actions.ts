@@ -3,10 +3,10 @@
 import { headers } from "next/headers";
 import { refresh } from "next/cache";
 import { after } from "next/server";
-import { getCurrentAdvisor } from "@/lib/server/auth";
-import { sql } from "@/lib/server/db";
-import { runAiPass, runRulePass } from "@/lib/server/follow-ups";
-import { sendServiceDueEmail } from "@/lib/server/mailer";
+import { getCurrentAdvisor } from "@/lib/auth/accounts";
+import { sql } from "@/lib/db";
+import { runAiPass, runRulePass } from "@/lib/follow-ups/run";
+import { sendServiceDueEmail } from "@/lib/mail/service-due-email";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

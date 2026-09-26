@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRightIcon } from "@/components/icons";
 import { Card, PageHeader, Tag } from "@/components/ui";
 import { formatDateTime } from "@/lib/format";
-import { getArrivals } from "@/lib/server/queries";
+import { getArrivals } from "@/lib/appointments/queries";
 
 export const metadata: Metadata = { title: "Today · gear-ai" };
 

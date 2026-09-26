@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { CheckIcon } from "@/components/icons";
 import { Button } from "@/components/ui";
 
-import type { SlotDay } from "@/lib/server/slots";
+import type { SlotDay } from "@/lib/booking/slots";
 
 export type { SlotDay };
 

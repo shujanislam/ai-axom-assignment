@@ -2,8 +2,8 @@ import "server-only";
 import { scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { cache } from "react";
-import { sql } from "./db";
-import { readSessionToken, SESSION_COOKIE } from "../session";
+import { sql } from "@/lib/db";
+import { readSessionToken, SESSION_COOKIE } from "./session";
 
 export type Advisor = {
   id: string;

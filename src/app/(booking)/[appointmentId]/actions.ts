@@ -1,8 +1,8 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { sql } from "@/lib/server/db";
-import { isOfferedSlot } from "@/lib/server/slots";
+import { sql } from "@/lib/db";
+import { isOfferedSlot } from "@/lib/booking/slots";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

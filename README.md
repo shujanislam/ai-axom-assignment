@@ -1,3 +1,26 @@
+# gear-ai
+
+Workshop desk for service advisors, with a customer chat.
+
+## Where things live
+
+`src/app` holds the routes; each folder's `actions.ts` has its server actions. The logic behind
+them lives in `src/lib`, one folder per feature:
+
+| Folder | What it does |
+|---|---|
+| `lib/db.ts`, `lib/ai.ts`, `lib/format.ts` | Shared basics: the Neon SQL client, the model client (NVIDIA, OpenAI-compatible), formatting helpers |
+| `lib/auth/` | `session.ts` signed session cookie (also used by `src/proxy.ts`); `accounts.ts` sign-in and the current advisor or customer |
+| `lib/follow-ups/` | The Re-evaluate job and its daily cron: `rules.ts` (next service dates, service intervals), `ai-review.ts` (model reads visit notes), `run.ts` (the passes), `context.ts` (input and saving), `queries.ts` (the `/service-due` list) |
+| `lib/chat/` | Customer conversations: `thread.ts` (reading), `messages.ts` (posting, booking and skips from a message), `assistant.ts` (AI replies and problem triage), `constants.ts` (limits) |
+| `lib/booking/` | Free slots and the public booking page's data |
+| `lib/invoices/` | `pricing.ts` (static price list) and `queries.ts` |
+| `lib/mail/` | Gmail `transport.ts`, and one file per email |
+| `lib/appointments/`, `lib/vehicles/`, `lib/job-cards/` | The queries behind those pages |
+
+UI pieces are in `src/components` (`chat/` and `booking/` for those features). Database changes
+are in `db/migrations`, numbered in the order to apply them.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

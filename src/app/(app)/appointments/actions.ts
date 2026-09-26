@@ -2,10 +2,10 @@
 
 import { refresh } from "next/cache";
 import { completableStatuses } from "@/lib/format";
-import { buildInvoiceCost, invoiceNumber } from "@/lib/invoice";
-import { getCurrentAdvisor } from "@/lib/server/auth";
-import { sql } from "@/lib/server/db";
-import { sendInvoiceEmail } from "@/lib/server/mailer";
+import { buildInvoiceCost, invoiceNumber } from "@/lib/invoices/pricing";
+import { getCurrentAdvisor } from "@/lib/auth/accounts";
+import { sql } from "@/lib/db";
+import { sendInvoiceEmail } from "@/lib/mail/invoice-email";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

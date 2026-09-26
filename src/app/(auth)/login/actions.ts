@@ -2,8 +2,8 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { verifyCredentials, verifyCustomerCredentials } from "@/lib/server/auth";
-import { createSessionToken, HOME, SESSION_COOKIE, SESSION_MAX_AGE, type SessionKind } from "@/lib/session";
+import { verifyCredentials, verifyCustomerCredentials } from "@/lib/auth/accounts";
+import { createSessionToken, HOME, SESSION_COOKIE, SESSION_MAX_AGE, type SessionKind } from "@/lib/auth/session";
 
 export type LoginState = {
   error?: string;

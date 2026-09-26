@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, Dot, PageHeader } from "@/components/ui";
 import { completableStatuses, formatDateTime, statusMeta } from "@/lib/format";
-import { getAppointments } from "@/lib/server/queries";
+import { getAppointments } from "@/lib/appointments/queries";
 import { CompleteButton } from "./complete-button";
 
 export const metadata: Metadata = { title: "Appointments · gear-ai" };

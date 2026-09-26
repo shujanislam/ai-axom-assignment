@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { formatDate } from "@/lib/format";
-import { countApprovedFollowUps, getPendingFollowUps } from "@/lib/server/queries";
+import { countApprovedFollowUps, getPendingFollowUps } from "@/lib/follow-ups/queries";
 import { ServiceDueView, type DueItem } from "./due-table";
 
 export const metadata: Metadata = { title: "Service due · gear-ai" };

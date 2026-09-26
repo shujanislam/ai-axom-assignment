@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { runFollowUpJob } from "./follow-ups";
+import { runFollowUpJob } from "./run";
 
 // Default: every day at 09:00 server time. Override with SERVICE_CALL_CRON.
 const DEFAULT_SCHEDULE = "0 9 * * *";

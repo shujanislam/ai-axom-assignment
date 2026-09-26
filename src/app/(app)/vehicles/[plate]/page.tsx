@@ -13,7 +13,8 @@ import {
   splitServiceType,
   statusMeta,
 } from "@/lib/format";
-import { getComplaints, getRecommendations, getServiceHistory, getVehicle } from "@/lib/server/queries";
+import { getComplaints, getServiceHistory, getVehicle } from "@/lib/vehicles/queries";
+import { getRecommendations } from "@/lib/job-cards/queries";
 
 export async function generateMetadata({ params }: PageProps<"/vehicles/[plate]">): Promise<Metadata> {
   const { plate } = await params;

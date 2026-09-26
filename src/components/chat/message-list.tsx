@@ -1,17 +1,11 @@
 import type React from "react";
 import { Streamdown } from "streamdown";
-import { SlotPicker } from "@/components/slot-picker";
+import { SlotPicker } from "@/components/booking/slot-picker";
 import { QuestionOptions } from "@/components/chat/question-options";
 import { SkipLink } from "@/components/chat/skip-link";
 import { humanize } from "@/lib/format";
-import {
-  answerableQuestionId,
-  assistantTyping,
-  bookingState,
-  chosenOptions,
-  type ChatMessage,
-} from "@/lib/server/chat";
-import { formatSlot, type SlotDay } from "@/lib/server/slots";
+import { answerableQuestionId, assistantTyping, bookingState, chosenOptions, type ChatMessage } from "@/lib/chat/thread";
+import { formatSlot, type SlotDay } from "@/lib/booking/slots";
 
 const TZ = "Asia/Kolkata";
 const GROUP_GAP_MS = 5 * 60_000; // consecutive messages from one sender within this gap share a group

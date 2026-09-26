@@ -2,7 +2,7 @@
 
 import { useActionState, useState, type ReactNode } from "react";
 import { ArrowRightIcon } from "@/components/icons";
-import type { SessionKind } from "@/lib/session";
+import type { SessionKind } from "@/lib/auth/session";
 import { login, type LoginState } from "./actions";
 
 const initialState: LoginState = {};

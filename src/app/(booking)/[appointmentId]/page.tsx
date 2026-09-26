@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SparkIcon } from "@/components/icons";
-import { getBookingAppointment } from "@/lib/server/queries";
-import { formatSlot, getFreeSlots, groupSlotsByDay } from "@/lib/server/slots";
-import { SlotPicker } from "@/components/slot-picker";
+import { getBookingAppointment } from "@/lib/booking/queries";
+import { formatSlot, getFreeSlots, groupSlotsByDay } from "@/lib/booking/slots";
+import { SlotPicker } from "@/components/booking/slot-picker";
 import { bookSlot } from "./actions";
 
 export const metadata: Metadata = { title: "Book your service · gear-ai" };
