@@ -2,6 +2,7 @@
 import type { Priority } from "@/lib/format";
 import { formatSlot } from "@/lib/booking/slots";
 import { sql } from "@/lib/db";
+import { bookWithJobCard, insertJobCard } from "@/lib/job-cards/plan";
 import { TITLE_MAX } from "./constants";
 import type { ChatMessage } from "./thread";
 
@@ -84,27 +85,33 @@ export type BookResult = { error?: string };
 
 /**
  * Books a BOOKING message's slot. It either schedules the DUE appointment the message points at,
- * or creates a scheduled appointment from its recommendation, in one statement either way.
+ * or creates a scheduled appointment from its recommendation, and creates the job card with a
+ * free mechanic, in one statement either way.
  */
 export async function bookFromMessage(customerId: string, messageId: string, slot: Date): Promise<BookResult> {
   const [message] = (await sql`
-    SELECT appointment_id, recommendation_id FROM messages
-    WHERE id = ${messageId} AND customer_id = ${customerId} AND kind = 'BOOKING' AND dismissed_at IS NULL`) as {
+    SELECT m.appointment_id, m.recommendation_id, COALESCE(a.appointment_type, left(r.title, 100)) AS job
+    FROM messages m
+    LEFT JOIN appointments a ON a.id = m.appointment_id
+    LEFT JOIN recommendations r ON r.id = m.recommendation_id
+    WHERE m.id = ${messageId} AND m.customer_id = ${customerId} AND m.kind = 'BOOKING' AND m.dismissed_at IS NULL`) as {
     appointment_id: string | null;
     recommendation_id: string | null;
+    job: string | null;
   }[];
-  if (!message) return { error: "This booking is no longer available." };
+  if (!message?.job) return { error: "This booking is no longer available." };
 
   const at = slot.toISOString();
-  let booked: { appointment_type: string }[] = [];
-  try {
-    if (message.appointment_id) {
-      booked = (await sql`
-        UPDATE appointments SET status = 'SCHEDULED', scheduled_at = ${at}
-        WHERE id = ${message.appointment_id} AND customer_id = ${customerId} AND status = 'DUE'
-        RETURNING appointment_type`) as typeof booked;
-    } else if (message.recommendation_id) {
-      booked = (await sql`
+  const booked = (await bookWithJobCard(message.job, slot, (plan) =>
+    message.appointment_id
+      ? sql`
+        WITH appt AS (
+          UPDATE appointments SET status = 'SCHEDULED', scheduled_at = ${at}
+          WHERE id = ${message.appointment_id} AND customer_id = ${customerId} AND status = 'DUE'
+          RETURNING id, customer_id, vehicle_id, appointment_type
+        ), card AS (${insertJobCard(plan)})
+        SELECT appointment_type FROM appt`
+      : sql`
         WITH rec AS (
           UPDATE recommendations SET advisor_action = 'APPROVED'
           WHERE id = ${message.recommendation_id} AND customer_id = ${customerId} AND advisor_action = 'PENDING'
@@ -112,19 +119,15 @@ export async function bookFromMessage(customerId: string, messageId: string, slo
         ), appt AS (
           INSERT INTO appointments (customer_id, vehicle_id, appointment_type, status, scheduled_at)
           SELECT customer_id, vehicle_id, left(title, 100), 'SCHEDULED', ${at} FROM rec
-          RETURNING id, appointment_type
+          RETURNING id, customer_id, vehicle_id, appointment_type
+        ), card AS (${insertJobCard(plan)}
         ), link AS (
           UPDATE messages SET appointment_id = (SELECT id FROM appt)
           WHERE id = ${messageId} AND EXISTS (SELECT 1 FROM appt)
         )
-        SELECT appointment_type FROM appt`) as typeof booked;
-    }
-  } catch (error) {
-    // appointments_scheduled_slot_idx: someone else booked this slot a moment ago.
-    if ((error as { code?: string }).code === "23505")
-      return { error: "Someone just took that slot. Pick another one." };
-    throw error;
-  }
+        SELECT appointment_type FROM appt`,
+  )) as { appointment_type: string }[] | null;
+  if (booked === null) return { error: "Someone just took that slot. Pick another one." };
   if (booked.length === 0) return { error: "This booking is no longer available." };
 
   await postAssistantMessage(

@@ -18,7 +18,7 @@ import {
   skipAllPending,
   updateWording,
   type ObservationState,
-} from "../actions";
+} from "./actions";
 
 export type SuggestionItem = {
   id: string;
@@ -66,8 +66,8 @@ export function SuggestionList({
             >
               Skip all
             </Button>
-            <ButtonLink href={`/job-cards/${plate}`} icon={<ArrowRightIcon size={15} />}>
-              Create job card
+            <ButtonLink href={`/vehicles/${plate}`} icon={<ArrowRightIcon size={15} />}>
+              Done
             </ButtonLink>
           </>
         }

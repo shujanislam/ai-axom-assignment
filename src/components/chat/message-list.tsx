@@ -40,7 +40,8 @@ export function MessageList({
 }: {
   thread: ChatMessage[];
   viewer: "CUSTOMER" | "ADVISOR";
-  slots: SlotDay[];
+  /** Free slots for a BOOKING message; only needed where `book` is given. */
+  slots?: (message: ChatMessage) => SlotDay[];
   book?: (messageId: string) => (slotIso: string) => Promise<{ error?: string }>;
   answer?: (messageId: string) => (option: string) => Promise<{ error?: string }>;
   skipQuestions?: (messageId: string) => () => Promise<{ error?: string }>;
@@ -110,7 +111,7 @@ export function MessageList({
                   </Streamdown>
                 )}
                 {m.kind === "BOOKING" && (
-                  <BookingBlock message={m} slots={slots} book={book?.(m.id)} skip={skipBooking?.(m.id)} />
+                  <BookingBlock message={m} slots={slots?.(m) ?? []} book={book?.(m.id)} skip={skipBooking?.(m.id)} />
                 )}
                 {m.kind === "QUESTION" && m.options && (
                   <QuestionOptions

@@ -1,5 +1,5 @@
-// STATIC PRICING — placeholder until real job-card billing exists.
-// Every appointment type maps to a fixed list of line items; anything unknown gets a flat charge.
+// STATIC PRICING — only for appointments completed without a job card (older bookings).
+// Appointments with a job card are invoiced from the card's estimate (lib/job-cards/plan.ts).
 
 export type InvoiceLine = { description: string; qty: number; unitPrice: number };
 
@@ -54,6 +54,11 @@ export function buildInvoiceCost(appointmentType: string): InvoiceCost {
   const items = PRICE_LIST.find((p) => p.match.test(appointmentType))?.lines ?? [
     { ...FALLBACK[0], description: `${appointmentType} (service charge)` },
   ];
+  return costFromLines(items);
+}
+
+/** Totals with GST for a list of line items. */
+export function costFromLines(items: InvoiceLine[]): InvoiceCost {
   const lines = items.map((l) => ({ ...l, amount: l.qty * l.unitPrice }));
   const subtotal = lines.reduce((n, l) => n + l.amount, 0);
   const gst = Math.round(subtotal * GST_RATE);

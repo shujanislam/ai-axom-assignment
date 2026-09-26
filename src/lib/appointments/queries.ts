@@ -36,17 +36,22 @@ export type AppointmentRow = {
   advisor_name: string | null;
   created_at: Date;
   invoice_id: string | null;
+  job_card_id: string | null;
+  mechanic_name: string | null;
 };
 
 export async function getAppointments() {
   const rows = await sql`
     SELECT a.id, v.vehicle_number, c.name AS customer_name, a.appointment_type, a.status,
       adv.name AS advisor_name, a.created_at,
-      (SELECT i.id FROM invoices i WHERE i.appointment_id = a.id ORDER BY i.created_at DESC LIMIT 1) AS invoice_id
+      (SELECT i.id FROM invoices i WHERE i.appointment_id = a.id ORDER BY i.created_at DESC LIMIT 1) AS invoice_id,
+      j.id AS job_card_id, m.name AS mechanic_name
     FROM appointments a
     JOIN vehicles v ON v.id = a.vehicle_id
     JOIN customers c ON c.id = a.customer_id
     LEFT JOIN advisors adv ON adv.id = a.assigned_to
+    LEFT JOIN job_cards j ON j.appointment_id = a.id
+    LEFT JOIN mechanics m ON m.id = j.mechanic_id
     ORDER BY a.created_at DESC`;
   return rows as AppointmentRow[];
 }

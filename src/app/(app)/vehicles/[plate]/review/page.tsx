@@ -15,7 +15,7 @@ const wordingRules = {
 
 const barShades = ["#dfe6d6", "#d6dfca", "#cdd8bf", "#b9cba5", "#a9c192", "#6a9c3f", "#5b9234"];
 
-export default async function ReviewPage({ params }: PageProps<"/job-cards/[plate]/review">) {
+export default async function ReviewPage({ params }: PageProps<"/vehicles/[plate]/review">) {
   const plate = decodeURIComponent((await params).plate);
   const vehicle = await getVehicle(plate);
   if (!vehicle) notFound();

@@ -5,8 +5,9 @@ import { Composer } from "@/components/chat/composer";
 import { MessageList } from "@/components/chat/message-list";
 import { ScrollToEnd } from "@/components/chat/scroll-to-end";
 import { getCurrentCustomer } from "@/lib/auth/accounts";
-import { getThread } from "@/lib/chat/thread";
-import { getFreeSlots, groupSlotsByDay } from "@/lib/booking/slots";
+import { bookingState, getThread } from "@/lib/chat/thread";
+import { groupSlotsByDay, type SlotDay } from "@/lib/booking/slots";
+import { getFreeSlots } from "@/lib/job-cards/plan";
 import { answerChatQuestion, bookFromChat, sendMessage, skipChatBooking, skipChatQuestions } from "./actions";
 
 export const metadata: Metadata = { title: "Messages · gear-ai" };
@@ -16,8 +17,13 @@ export default async function CustomerChatPage() {
   const customer = await getCurrentCustomer();
   if (!customer) redirect("/session-expired");
   const thread = await getThread(customer.id);
-  const needsSlots = thread.some((m) => m.kind === "BOOKING");
-  const slots = needsSlots ? groupSlotsByDay(await getFreeSlots()) : [];
+  // Each open booking offers the slots where a mechanic who can do that job is free.
+  const jobs = new Set(
+    thread.filter((m) => m.kind === "BOOKING" && m.booking_job && bookingState(m).open).map((m) => m.booking_job!),
+  );
+  const slotsByJob = new Map<string, SlotDay[]>(
+    await Promise.all([...jobs].map(async (job) => [job, groupSlotsByDay((await getFreeSlots(job)).slots)] as const)),
+  );
 
   return (
     <>
@@ -35,7 +41,7 @@ export default async function CustomerChatPage() {
           <MessageList
             thread={thread}
             viewer="CUSTOMER"
-            slots={slots}
+            slots={(m) => (m.booking_job && slotsByJob.get(m.booking_job)) || []}
             book={(id) => bookFromChat.bind(null, id)}
             answer={(id) => answerChatQuestion.bind(null, id)}
             skipQuestions={(id) => skipChatQuestions.bind(null, id)}

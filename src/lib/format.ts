@@ -31,6 +31,26 @@ export const dueFilters = [
   { key: "low", label: "Low", priorities: ["LOW"] },
 ] as const;
 
+// ---------------------------------------------------------------- job cards
+
+export type JobCardStatus = "DRAFT" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+
+export const jobCardStatus: Record<JobCardStatus, { label: string; tone: Tone }> = {
+  DRAFT: { label: "Needs a mechanic", tone: "amber" },
+  ASSIGNED: { label: "Assigned", tone: "leaf" },
+  IN_PROGRESS: { label: "In progress", tone: "leaf" },
+  COMPLETED: { label: "Completed", tone: "idle" },
+  CANCELLED: { label: "Cancelled", tone: "idle" },
+};
+
+/** Job cards that are still being worked on. */
+export const openJobCardStatuses: JobCardStatus[] = ["DRAFT", "ASSIGNED", "IN_PROGRESS"];
+
+/** Human-facing job card number, derived from the card's id. */
+export function jobCardNumber(id: string) {
+  return `JC-${id.slice(0, 8).toUpperCase()}`;
+}
+
 // ---------------------------------------------------------- recommendations
 
 export type AdvisorAction =

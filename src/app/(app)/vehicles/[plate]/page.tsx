@@ -14,7 +14,7 @@ import {
   statusMeta,
 } from "@/lib/format";
 import { getComplaints, getServiceHistory, getVehicle } from "@/lib/vehicles/queries";
-import { getRecommendations } from "@/lib/job-cards/queries";
+import { getLatestJobCardId, getRecommendations } from "@/lib/job-cards/queries";
 
 export async function generateMetadata({ params }: PageProps<"/vehicles/[plate]">): Promise<Metadata> {
   const { plate } = await params;
@@ -29,10 +29,11 @@ export default async function VehiclePage({ params }: PageProps<"/vehicles/[plat
   const vehicle = await getVehicle(plate);
   if (!vehicle) notFound();
 
-  const [services, complaints, recommendations] = await Promise.all([
+  const [services, complaints, recommendations, jobCardId] = await Promise.all([
     getServiceHistory(vehicle.id),
     getComplaints(vehicle.id),
     getRecommendations(vehicle.id),
+    getLatestJobCardId(vehicle.id),
   ]);
 
   const open = recommendations.filter((r) => r.advisor_action === "PENDING" || onJobCard.includes(r.advisor_action));
@@ -88,10 +89,12 @@ export default async function VehiclePage({ params }: PageProps<"/vehicles/[plat
           <p className="mt-1 text-[13.5px] text-muted">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2.5">
-          <ButtonLink href={`/job-cards/${vehicle.vehicle_number}`} variant="secondary">
-            Job card
-          </ButtonLink>
-          <ButtonLink href={`/job-cards/${vehicle.vehicle_number}/review`} icon={<ArrowRightIcon size={15} />}>
+          {jobCardId && (
+            <ButtonLink href={`/job-cards/${jobCardId}`} variant="secondary">
+              Job card
+            </ButtonLink>
+          )}
+          <ButtonLink href={`/vehicles/${vehicle.vehicle_number}/review`} icon={<ArrowRightIcon size={15} />}>
             Review suggestions
           </ButtonLink>
         </div>

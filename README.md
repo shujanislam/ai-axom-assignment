@@ -14,9 +14,10 @@ them lives in `src/lib`, one folder per feature:
 | `lib/follow-ups/` | The Re-evaluate job and its daily cron: `rules.ts` (next service dates, service intervals), `ai-review.ts` (model reads visit notes), `run.ts` (the passes), `context.ts` (input and saving), `queries.ts` (the `/service-due` list) |
 | `lib/chat/` | Customer conversations: `thread.ts` (reading), `messages.ts` (posting, booking and skips from a message), `assistant.ts` (AI replies and problem triage), `constants.ts` (limits) |
 | `lib/booking/` | Free slots and the public booking page's data |
-| `lib/invoices/` | `pricing.ts` (static price list) and `queries.ts` |
+| `lib/invoices/` | `pricing.ts` (totals with GST; a static price list for appointments without a job card) and `queries.ts` |
 | `lib/mail/` | Gmail `transport.ts`, and one file per email |
-| `lib/appointments/`, `lib/vehicles/`, `lib/job-cards/` | The queries behind those pages |
+| `lib/job-cards/` | `plan.ts`: when a visit is booked, picks the skill, a free mechanic, parts and an estimate, and creates the job card in the booking statement; `queries.ts` |
+| `lib/appointments/`, `lib/vehicles/` | The queries behind those pages |
 
 UI pieces are in `src/components` (`chat/` and `booking/` for those features). Database changes
 are in `db/migrations`, numbered in the order to apply them.

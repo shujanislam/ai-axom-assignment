@@ -114,7 +114,7 @@ export default async function MessagesPage({ searchParams }: PageProps<"/message
 
             <div className="chat-wallpaper min-h-0 flex-1 overflow-y-auto px-3 pb-4 pt-1 sm:px-6 lg:px-10">
               <div className="mx-auto max-w-[860px]">
-                <MessageList thread={thread} viewer="ADVISOR" slots={[]} />
+                <MessageList thread={thread} viewer="ADVISOR" />
                 <ScrollToEnd count={thread.length} />
               </div>
             </div>

@@ -2,9 +2,10 @@
 
 import { refresh } from "next/cache";
 import { completableStatuses } from "@/lib/format";
-import { buildInvoiceCost, invoiceNumber } from "@/lib/invoices/pricing";
+import { buildInvoiceCost, invoiceNumber, type InvoiceCost } from "@/lib/invoices/pricing";
 import { getCurrentAdvisor } from "@/lib/auth/accounts";
 import { sql } from "@/lib/db";
+import { createJobCard } from "@/lib/job-cards/plan";
 import { sendInvoiceEmail } from "@/lib/mail/invoice-email";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,25 +25,32 @@ type Completed = {
 };
 
 /**
- * Marks the appointment COMPLETED, records the visit in the service history and saves its
- * invoice, all in one statement, then emails the invoice. A failed email undoes nothing.
+ * Marks the appointment and its job card COMPLETED, records the visit in the service history and
+ * saves its invoice, all in one statement, then emails the invoice. The invoice is the job card's
+ * estimate, or the static price list for appointments without a card. A failed email undoes nothing.
  */
 export async function completeAppointment(id: string): Promise<CompleteResult> {
   if (!(await getCurrentAdvisor())) throw new Error("Not signed in");
   if (!UUID.test(id)) throw new Error("Invalid request");
 
   const [appointment] = (await sql`
-    SELECT appointment_type FROM appointments WHERE id = ${id} AND status = ANY(${completableStatuses})`) as {
+    SELECT a.appointment_type, j.estimate FROM appointments a
+    LEFT JOIN job_cards j ON j.appointment_id = a.id AND j.status <> 'CANCELLED'
+    WHERE a.id = ${id} AND a.status = ANY(${completableStatuses})`) as {
     appointment_type: string;
+    estimate: InvoiceCost | null;
   }[];
   if (!appointment) throw new Error("This appointment can't be completed from its current status.");
-  const cost = buildInvoiceCost(appointment.appointment_type);
+  const cost = appointment.estimate ?? buildInvoiceCost(appointment.appointment_type);
 
   const [done] = (await sql`
     WITH done AS (
       UPDATE appointments SET status = 'COMPLETED'
       WHERE id = ${id} AND status = ANY(${completableStatuses})
       RETURNING id, customer_id, vehicle_id, appointment_type
+    ), card AS (
+      UPDATE job_cards SET status = 'COMPLETED', updated_at = clock_timestamp()
+      WHERE appointment_id = (SELECT id FROM done) AND status <> 'CANCELLED'
     ), visit AS (
       INSERT INTO services (customer_id, vehicle_id, service_type, appointment_id)
       SELECT customer_id, vehicle_id, appointment_type || ' · completed', id FROM done
@@ -76,4 +84,14 @@ export async function completeAppointment(id: string): Promise<CompleteResult> {
     console.error(`[mail] invoice ${invoiceId} for appointment ${done.id} failed:`, error);
     return { invoiceId, emailed: false, reason: error instanceof Error ? error.message : "sending failed" };
   }
+}
+
+/** Creates the job card for a booked appointment that doesn't have one yet. Returns its id. */
+export async function createAppointmentJobCard(id: string): Promise<{ jobCardId?: string; error?: string }> {
+  if (!(await getCurrentAdvisor())) throw new Error("Not signed in");
+  if (!UUID.test(id)) throw new Error("Invalid request");
+  const jobCardId = await createJobCard(id);
+  if (!jobCardId) return { error: "Only booked or checked-in appointments get a job card." };
+  refresh();
+  return { jobCardId };
 }

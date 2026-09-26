@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SparkIcon } from "@/components/icons";
 import { getBookingAppointment } from "@/lib/booking/queries";
-import { formatSlot, getFreeSlots, groupSlotsByDay } from "@/lib/booking/slots";
+import { formatSlot, groupSlotsByDay } from "@/lib/booking/slots";
+import { getFreeSlots } from "@/lib/job-cards/plan";
 import { SlotPicker } from "@/components/booking/slot-picker";
 import { bookSlot } from "./actions";
 
@@ -22,12 +23,14 @@ export default async function BookingPage({ params }: PageProps<"/[appointmentId
 
   let body;
   if (appointment.status === "DUE") {
+    const { job, slots } = await getFreeSlots(appointment.appointment_type);
+    const hours = job.labour_hours === 1 ? "about an hour" : `about ${job.labour_hours} hours`;
     body = (
       <>
         <p className="mt-1 text-[13.5px] text-muted">
-          Pick a time to bring your {vehicle} in. Times are in India time; the visit takes about an hour.
+          Pick a time to bring your {vehicle} in. Times are in India time; the work takes {hours}.
         </p>
-        <SlotPicker days={groupSlotsByDay(await getFreeSlots())} book={bookSlot.bind(null, appointment.id)} />
+        <SlotPicker days={groupSlotsByDay(slots)} book={bookSlot.bind(null, appointment.id)} />
       </>
     );
   } else if (appointment.status === "SCHEDULED" && appointment.scheduled_at) {

@@ -1,6 +1,5 @@
-import { sql } from "@/lib/db";
-
-// Workshop hours, in India time. One car per slot (enforced by a unique index on scheduled_at).
+// Workshop hours, in India time. How many cars fit in a slot depends on free mechanics
+// (see lib/job-cards/plan.ts); a job of N hours takes N consecutive working hours.
 export const WORKSHOP_TZ = "Asia/Kolkata";
 const TZ_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 const SLOT_HOURS = [10, 11, 12, 14, 15, 16]; // 13:00 is lunch
@@ -23,16 +22,22 @@ export function isOfferedSlot(slot: Date) {
   return upcomingSlots().some((s) => +s === +slot);
 }
 
-/** Offered slots nobody has booked yet. */
-export async function getFreeSlots() {
-  const slots = upcomingSlots();
-  const taken = (await sql`
-    SELECT scheduled_at FROM appointments
-    WHERE status = 'SCHEDULED' AND scheduled_at >= ${slots[0]?.toISOString() ?? new Date().toISOString()}`) as {
-    scheduled_at: Date;
-  }[];
-  const takenSet = new Set(taken.map((t) => +new Date(t.scheduled_at)));
-  return slots.filter((s) => !takenSet.has(+s));
+/** India-time hour of a slot, or -1 when it isn't on the hour. */
+function localHour(slot: Date) {
+  const local = new Date(slot.getTime() + TZ_OFFSET_MS);
+  return local.getUTCMinutes() || local.getUTCSeconds() || local.getUTCMilliseconds() ? -1 : local.getUTCHours();
+}
+
+/**
+ * When a job of `hours` starting at `start` ends: after that many working hours, stepping over
+ * lunch. Null when `start` isn't a slot or the job would run past closing.
+ */
+export function jobWindow(start: Date, hours: number): { startsAt: Date; endsAt: Date } | null {
+  const first = SLOT_HOURS.indexOf(localHour(start));
+  const last = SLOT_HOURS[first + hours - 1];
+  if (first < 0 || last === undefined) return null;
+  const endsAt = new Date(start.getTime() + (last + 1 - SLOT_HOURS[first]) * 60 * 60 * 1000);
+  return { startsAt: start, endsAt };
 }
 
 export function formatSlot(value: Date | string) {
@@ -45,6 +50,17 @@ export function formatSlot(value: Date | string) {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+/** "Tue, 30 Sept, 10:00–12:00": a job's time in the workshop. */
+export function formatWindow(startsAt: Date | string, endsAt: Date | string) {
+  const end = new Date(endsAt).toLocaleTimeString("en-GB", {
+    timeZone: WORKSHOP_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${formatSlot(startsAt)}–${end}`;
 }
 
 export type SlotDay = { day: string; slots: { iso: string; time: string }[] };

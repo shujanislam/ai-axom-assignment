@@ -20,6 +20,8 @@ export type ChatMessage = {
   appointment_status: string | null;
   scheduled_at: Date | null;
   recommendation_action: string | null;
+  /** On a BOOKING message: the job being booked, which decides the free slots. */
+  booking_job: string | null;
 };
 
 export async function getThread(customerId: string) {
@@ -27,6 +29,7 @@ export async function getThread(customerId: string) {
     SELECT m.id, m.sender, m.kind, m.body, m.options, m.triage_id, m.created_at, m.ai_status, m.dismissed_at,
       adv.name AS advisor_name, a.status AS appointment_status, a.scheduled_at,
       r.advisor_action AS recommendation_action,
+      CASE WHEN m.kind = 'BOOKING' THEN COALESCE(a.appointment_type, left(r.title, 100)) END AS booking_job,
       CASE WHEN t.id IS NOT NULL
         THEN json_build_object('status', t.status, 'fault', t.fault, 'fixable', t.fixable) END AS verdict
     FROM messages m
