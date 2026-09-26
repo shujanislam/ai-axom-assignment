@@ -1,6 +1,7 @@
 import { Streamdown } from "streamdown";
 import { SlotPicker } from "@/components/slot-picker";
 import { QuestionOptions } from "@/components/chat/question-options";
+import { SkipLink } from "@/components/chat/skip-link";
 import { Tag } from "@/components/ui";
 import { humanize } from "@/lib/format";
 import {
@@ -23,8 +24,8 @@ const time = (d: Date) =>
 
 /**
  * One thread, shared by the customer's chat and the advisor inbox. `viewer` decides which side
- * is "mine". Booking pickers and question options are only interactive when `book` / `answer`
- * are given (the customer's view); advisors also see each triage's verdict.
+ * is "mine". Booking pickers, question options and the skip links are only interactive when their
+ * actions are given (the customer's view); advisors also see each triage's verdict.
  */
 export function MessageList({
   thread,
@@ -32,12 +33,16 @@ export function MessageList({
   slots,
   book,
   answer,
+  skipQuestions,
+  skipBooking,
 }: {
   thread: ChatMessage[];
   viewer: "CUSTOMER" | "ADVISOR";
   slots: SlotDay[];
   book?: (messageId: string) => (slotIso: string) => Promise<{ error?: string }>;
   answer?: (messageId: string) => (option: string) => Promise<{ error?: string }>;
+  skipQuestions?: (messageId: string) => () => Promise<{ error?: string }>;
+  skipBooking?: (messageId: string) => () => Promise<{ error?: string }>;
 }) {
   const answerable = answerableQuestionId(thread);
   const chosen = chosenOptions(thread);
@@ -73,7 +78,9 @@ export function MessageList({
                   {m.body}
                 </Streamdown>
               )}
-              {m.kind === "BOOKING" && <BookingBlock message={m} slots={slots} book={book?.(m.id)} />}
+              {m.kind === "BOOKING" && (
+                <BookingBlock message={m} slots={slots} book={book?.(m.id)} skip={skipBooking?.(m.id)} />
+              )}
               {m.kind === "QUESTION" && m.options && (
                 <QuestionOptions
                   options={m.options}
@@ -81,10 +88,19 @@ export function MessageList({
                   answer={m.id === answerable ? answer?.(m.id) : undefined}
                 />
               )}
+              {m.kind === "QUESTION" && m.id === answerable && skipQuestions && (
+                <SkipLink label="Skip the questions" skip={skipQuestions(m.id)} />
+              )}
             </div>
             {viewer === "ADVISOR" && m.verdict && (
               <span className="mt-1.5 flex flex-wrap gap-1.5 px-1">
-                <Tag>{m.verdict.status === "CONSULT" ? "Triage: consultation only" : "Triage: needs appointment"}</Tag>
+                <Tag>
+                  {m.verdict.status === "CONSULT"
+                    ? "Triage: consultation only"
+                    : m.verdict.status === "SKIPPED"
+                      ? "Triage: skipped by customer"
+                      : "Triage: needs appointment"}
+                </Tag>
                 {m.verdict.fault && <Tag>Likely fault: {humanize(m.verdict.fault)}</Tag>}
                 {m.verdict.fixable && <Tag>Fix: {humanize(m.verdict.fixable)}</Tag>}
               </span>
@@ -108,16 +124,22 @@ function BookingBlock({
   message,
   slots,
   book,
+  skip,
 }: {
   message: ChatMessage;
   slots: SlotDay[];
   book?: (slotIso: string) => Promise<{ error?: string }>;
+  skip?: () => Promise<{ error?: string }>;
 }) {
   const state = bookingState(message);
   if (!state.open) {
     return (
       <p className="mt-3 rounded-xl bg-well px-3 py-2 text-[13px] text-muted">
-        {state.bookedAt ? `Booked for ${formatSlot(state.bookedAt)}.` : "This booking is no longer open."}
+        {state.bookedAt
+          ? `Booked for ${formatSlot(state.bookedAt)}.`
+          : state.skipped
+            ? "Booking skipped."
+            : "This booking is no longer open."}
       </p>
     );
   }
@@ -130,6 +152,7 @@ function BookingBlock({
   return (
     <div className="-mx-1 mt-1">
       <SlotPicker days={slots} book={book} submitLabel="Book" />
+      {skip && <SkipLink label="Skip booking" skip={skip} />}
     </div>
   );
 }

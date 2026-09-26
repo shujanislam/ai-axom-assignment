@@ -39,6 +39,8 @@ export type ChatMessage = {
   triage_id: string | null;
   /** Set on the message that concluded a triage: the verdict, for advisors. */
   verdict: { status: string; fault: string | null; fixable: string | null } | null;
+  /** Set when the customer skipped this BOOKING offer. */
+  dismissed_at: Date | null;
   created_at: Date;
   ai_status: string | null;
   advisor_name: string | null;
@@ -49,7 +51,7 @@ export type ChatMessage = {
 
 export async function getThread(customerId: string) {
   const rows = await sql`
-    SELECT m.id, m.sender, m.kind, m.body, m.options, m.triage_id, m.created_at, m.ai_status,
+    SELECT m.id, m.sender, m.kind, m.body, m.options, m.triage_id, m.created_at, m.ai_status, m.dismissed_at,
       adv.name AS advisor_name, a.status AS appointment_status, a.scheduled_at,
       r.advisor_action AS recommendation_action,
       CASE WHEN t.id IS NOT NULL
@@ -65,8 +67,11 @@ export async function getThread(customerId: string) {
 }
 
 /** What a BOOKING message can still do. */
-export function bookingState(m: ChatMessage): { open: true } | { open: false; bookedAt: Date | null } {
+export function bookingState(
+  m: ChatMessage,
+): { open: true } | { open: false; bookedAt: Date | null; skipped?: boolean } {
   if (m.appointment_status === "SCHEDULED" && m.scheduled_at) return { open: false, bookedAt: m.scheduled_at };
+  if (m.dismissed_at) return { open: false, bookedAt: null, skipped: true };
   if (m.appointment_status === "DUE") return { open: true };
   if (m.appointment_status === null && m.recommendation_action === "PENDING") return { open: true };
   return { open: false, bookedAt: null };
@@ -206,7 +211,7 @@ export type BookResult = { error?: string };
 export async function bookFromMessage(customerId: string, messageId: string, slot: Date): Promise<BookResult> {
   const [message] = (await sql`
     SELECT appointment_id, recommendation_id FROM messages
-    WHERE id = ${messageId} AND customer_id = ${customerId} AND kind = 'BOOKING'`) as {
+    WHERE id = ${messageId} AND customer_id = ${customerId} AND kind = 'BOOKING' AND dismissed_at IS NULL`) as {
     appointment_id: string | null;
     recommendation_id: string | null;
   }[];
@@ -249,6 +254,88 @@ export async function bookFromMessage(customerId: string, messageId: string, slo
     `Booked: **${booked[0].appointment_type}** on **${formatSlot(slot)}**. See you then!`,
   );
   return {};
+}
+
+// ------------------------------------------------------------------ skips
+
+/**
+ * Closes a booking offer the customer doesn't want. What it points at is left alone: a DUE
+ * appointment can still be booked from the email link, a recommendation stays on /service-due.
+ */
+export async function skipBooking(customerId: string, messageId: string) {
+  const rows = await sql`
+    UPDATE messages SET dismissed_at = clock_timestamp()
+    WHERE id = ${messageId} AND customer_id = ${customerId} AND kind = 'BOOKING' AND dismissed_at IS NULL
+    RETURNING id`;
+  if (rows.length === 0) return false;
+  await postAssistantMessage(customerId, "No problem. Just message us here whenever you’d like to book a visit.");
+  return true;
+}
+
+/**
+ * The customer skips the triage questions. No model call: the problem goes straight to an advisor
+ * as an inspection to review, and the customer may book a slot (or skip that too).
+ * Only allowed while the question is the newest message, i.e. nobody is mid-answer.
+ */
+export async function skipTriage(customerId: string, questionId: string) {
+  const [triage] = (await sql`
+    UPDATE triages t SET status = 'SKIPPED', fault = 'UNCLEAR', fixable = 'UNCLEAR', closed_at = clock_timestamp()
+    FROM messages q
+    WHERE q.id = ${questionId} AND q.customer_id = ${customerId} AND q.kind = 'QUESTION'
+      AND t.id = q.triage_id AND t.status = 'OPEN'
+      AND NOT EXISTS (
+        SELECT 1 FROM messages later
+        WHERE later.customer_id = q.customer_id AND (later.created_at, later.id) > (q.created_at, q.id)
+      )
+    RETURNING t.id, t.vehicle_id, t.summary`) as { id: string; vehicle_id: string | null; summary: string }[];
+  if (!triage) return false;
+
+  await sql`INSERT INTO messages (customer_id, sender, body, triage_id) VALUES (${customerId}, 'CUSTOMER', 'Skip the questions', ${triage.id})`;
+
+  // The triage may not know the vehicle yet; a customer with a single vehicle is unambiguous.
+  const vehicles = (await sql`
+    SELECT v.id, v.vehicle_number FROM vehicles v
+    WHERE v.id = ${triage.vehicle_id} OR (${triage.vehicle_id}::uuid IS NULL AND v.id IN (
+      SELECT vehicle_id FROM appointments WHERE customer_id = ${customerId}
+      UNION SELECT vehicle_id FROM services WHERE customer_id = ${customerId}
+    ))`) as { id: string; vehicle_number: string }[];
+  const vehicle = vehicles.length === 1 ? vehicles[0] : undefined;
+
+  let recommendationId: string | null = null;
+  if (vehicle) {
+    await sql`INSERT INTO complaints (customer_id, vehicle_id, complaint_type) VALUES (${customerId}, ${vehicle.id}, 'OTHER')`;
+    recommendationId = await ensureRecommendation(customerId, vehicle.id, {
+      type: "INSPECTION",
+      title: `Inspection: ${triage.summary}`.slice(0, TITLE_MAX),
+      description: `Chat triage skipped by the customer: ${triage.summary}. Needs an advisor to assess.`,
+      priority: "MEDIUM",
+    });
+  }
+
+  const messageId = await postAssistantMessage(
+    customerId,
+    vehicle
+      ? "No problem, we’ll skip the questions. An advisor will look into it. If you’d like us to check the vehicle, pick a slot below, or skip booking."
+      : "No problem, we’ll skip the questions. An advisor will look into it and get back to you here.",
+    { triageId: triage.id, recommendationId },
+  );
+  await sql`
+    UPDATE triages SET vehicle_id = ${vehicle?.id ?? triage.vehicle_id}, recommendation_id = ${recommendationId},
+      concluded_message_id = ${messageId}
+    WHERE id = ${triage.id}`;
+
+  if (vehicle && recommendationId) {
+    await postAssistantMessage(
+      customerId,
+      `Pick a time for **Inspection: ${triage.summary}** on ${vehicle.vehicle_number}:`,
+      {
+        kind: "BOOKING",
+        recommendationId,
+        triageId: triage.id,
+      },
+    );
+  }
+  return true;
 }
 
 // -------------------------------------------------------------- assistant

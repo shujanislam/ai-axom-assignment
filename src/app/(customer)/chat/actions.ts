@@ -8,6 +8,8 @@ import {
   bookFromMessage,
   postCustomerMessage,
   respondToCustomer,
+  skipBooking,
+  skipTriage,
   type BookResult,
 } from "@/lib/server/chat";
 import { isOfferedSlot } from "@/lib/server/slots";
@@ -53,6 +55,28 @@ export async function answerChatQuestion(messageId: string, option: string): Pro
     return { error: "This question was already answered." };
   }
   after(() => respondToCustomer(customer.id));
+  refresh();
+  return {};
+}
+
+/** "Skip the questions": the problem goes to an advisor without the rest of the triage. */
+export async function skipChatQuestions(messageId: string): Promise<{ error?: string }> {
+  const customer = await requireCustomer();
+  if (!UUID.test(messageId) || !(await skipTriage(customer.id, messageId))) {
+    refresh();
+    return { error: "These questions can’t be skipped any more." };
+  }
+  refresh();
+  return {};
+}
+
+/** "Skip booking": closes the slot picker; nothing is booked. */
+export async function skipChatBooking(messageId: string): Promise<{ error?: string }> {
+  const customer = await requireCustomer();
+  if (!UUID.test(messageId) || !(await skipBooking(customer.id, messageId))) {
+    refresh();
+    return { error: "This booking was already closed." };
+  }
   refresh();
   return {};
 }
